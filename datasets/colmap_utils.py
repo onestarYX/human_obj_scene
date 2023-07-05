@@ -34,6 +34,8 @@ import sys
 import collections
 import numpy as np
 import struct
+from scipy.spatial.transform import Slerp
+from scipy.spatial.transform import Rotation as R
 
 
 CameraModel = collections.namedtuple(
@@ -44,6 +46,7 @@ BaseImage = collections.namedtuple(
     "Image", ["id", "qvec", "tvec", "camera_id", "name", "xys", "point3D_ids"])
 Point3D = collections.namedtuple(
     "Point3D", ["id", "xyz", "rgb", "error", "image_ids", "point2D_idxs"])
+
 
 class Image(BaseImage):
     def qvec2rotmat(self):
@@ -63,7 +66,7 @@ CAMERA_MODELS = {
     CameraModel(model_id=9, model_name="RADIAL_FISHEYE", num_params=5),
     CameraModel(model_id=10, model_name="THIN_PRISM_FISHEYE", num_params=12)
 }
-CAMERA_MODEL_IDS = dict([(camera_model.model_id, camera_model) \
+CAMERA_MODEL_IDS = dict([(camera_model.model_id, camera_model)
                          for camera_model in CAMERA_MODELS])
 
 
@@ -123,8 +126,8 @@ def read_cameras_binary(path_to_model_file):
             width = camera_properties[2]
             height = camera_properties[3]
             num_params = CAMERA_MODEL_IDS[model_id].num_params
-            params = read_next_bytes(fid, num_bytes=8*num_params,
-                                     format_char_sequence="d"*num_params)
+            params = read_next_bytes(fid, num_bytes=8 * num_params,
+                                     format_char_sequence="d" * num_params)
             cameras[camera_id] = Camera(id=camera_id,
                                         model=model_name,
                                         width=width,
@@ -188,8 +191,8 @@ def read_images_binary(path_to_model_file):
                 current_char = read_next_bytes(fid, 1, "c")[0]
             num_points2D = read_next_bytes(fid, num_bytes=8,
                                            format_char_sequence="Q")[0]
-            x_y_id_s = read_next_bytes(fid, num_bytes=24*num_points2D,
-                                       format_char_sequence="ddq"*num_points2D)
+            x_y_id_s = read_next_bytes(fid, num_bytes=24 * num_points2D,
+                                       format_char_sequence="ddq" * num_points2D)
             xys = np.column_stack([tuple(map(float, x_y_id_s[0::3])),
                                    tuple(map(float, x_y_id_s[1::3]))])
             point3D_ids = np.array(tuple(map(int, x_y_id_s[2::3])))
@@ -246,8 +249,8 @@ def read_points3d_binary(path_to_model_file):
             track_length = read_next_bytes(
                 fid, num_bytes=8, format_char_sequence="Q")[0]
             track_elems = read_next_bytes(
-                fid, num_bytes=8*track_length,
-                format_char_sequence="ii"*track_length)
+                fid, num_bytes=8 * track_length,
+                format_char_sequence="ii" * track_length)
             image_ids = np.array(tuple(map(int, track_elems[0::2])))
             point2D_idxs = np.array(tuple(map(int, track_elems[1::2])))
             points3D[point3D_id] = Point3D(
@@ -294,3 +297,76 @@ def rotmat2qvec(R):
     if qvec[0] < 0:
         qvec *= -1
     return qvec
+
+
+def create_spiral_poses(original_poses, radii, n_poses=120):
+    """
+    Create spiral poses around given poses for novel view rendering purpose.
+    Inputs:
+        original_poses: (N_frames, 3, 4) original poses around which to generate the spiral.
+        radii: (3) radii of the spiral for each axis (only x, y are used)
+        n_poses: int, number of poses to create
+    Outputs:
+        poses_spiral: (n_poses, 3, 4) the poses in the spiral path
+    """
+    N_frames = len(original_poses)
+    # interpolation rotations
+    rot_slerp = Slerp(range(N_frames), R.from_matrix(original_poses[..., :3]))
+    interp_rots = rot_slerp(np.linspace(0, N_frames - 1, n_poses + 1))[:-1]
+    interp_rots = interp_rots.as_matrix()
+    # interpolation positions
+    interp_xyzs = np.stack([np.interp(np.linspace(0, N_frames - 1, n_poses + 1)[:-1], range(N_frames),
+                                      original_poses[:, i, 3]) for i in range(3)], -1)
+
+    poses_spiral = []
+    for i, t in enumerate(np.linspace(0, 8 * np.pi, n_poses + 1)[:-1]):  # rotate 8pi (4 rounds)
+        pose = np.zeros((3, 4))
+        pose[:, :3] = interp_rots[i]
+        pose[:, 3] = interp_xyzs[i] + radii * np.array([np.cos(t), -np.sin(t), 0])
+        poses_spiral += [pose]
+
+    return np.stack(poses_spiral, 0)  # (n_poses, 3, 4)
+
+
+def create_wander_path(c2w, max_trans, n_poses=60):
+    """
+    Borrowed from
+    https://github.com/zhengqili/Neural-Scene-Flow-Fields/blob/main/nsff_exp/load_llff.py#L424
+    """
+    output_poses = []
+
+    for i in range(n_poses):
+        x_trans = max_trans * np.sin(2.0 * np.pi * float(i) / float(n_poses))
+        y_trans = max_trans * np.cos(2.0 * np.pi * float(i) / float(n_poses)) / 2.0
+        z_trans = max_trans * np.cos(2.0 * np.pi * float(i) / float(n_poses))
+
+        i_pose = np.concatenate([
+            np.concatenate(
+                [np.eye(3), np.array([x_trans, y_trans, z_trans])[:, np.newaxis]], axis=1),
+            np.array([0.0, 0.0, 0.0, 1.0])[np.newaxis, :]
+        ], axis=0)
+
+        i_pose = np.linalg.inv(i_pose)
+
+        ref_pose = np.concatenate([c2w[:3, :4],
+                                   np.array([0.0, 0.0, 0.0, 1.0])[np.newaxis, :]], axis=0)
+
+        render_pose = np.dot(ref_pose, i_pose)
+        output_poses.append(render_pose)
+
+    return output_poses
+
+
+def get_points_from_points3D(points3D):
+    """Returns the np array.
+    """
+    points = []
+    colors = []
+    for point3d_id in points3D.keys():
+        point3D = points3D[point3d_id]
+        points.append(point3D.xyz)
+        colors.append(point3D.rgb)
+    points = np.array(points)
+    colors = np.array(colors)
+    assert points.shape == colors.shape
+    return points, colors
