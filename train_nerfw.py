@@ -568,6 +568,5 @@ def main(hparams):
 
 
 if __name__ == '__main__':
-
     hparams = get_opts()
     main(hparams)
