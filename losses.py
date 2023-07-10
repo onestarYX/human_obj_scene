@@ -59,5 +59,42 @@ class NerfWLoss(nn.Module):
         return ret
 
 
+class NerfletWLoss(nn.Module):
+    """
+    Equation 13 in the NeRF-W paper.
+    Name abbreviations:
+        c_l: coarse color loss
+        f_l: fine color loss (1st term in equation 13)
+        b_l: beta loss (2nd term in equation 13)
+        s_l: sigma loss (3rd term in equation 13)
+    """
+
+    def __init__(self, coef=1, lambda_u=0.01):
+        """
+        lambda_u: in equation 13
+        """
+        super().__init__()
+        self.coef = coef
+        self.lambda_u = lambda_u
+
+    def forward(self, inputs, targets, ray_mask):
+        ray_mask_sum = ray_mask.sum() + 1e-20
+        # if ray_mask_sum < len(inputs['rgb_fine']):
+        #     print(ray_mask_sum)
+
+        # print(inputs["transient_accumulation"].shape)
+
+        ret = {}
+        ret['c_l'] = 0.5 * (((inputs['combined_rgb_map'] - targets) ** 2) * ray_mask[:, None]).sum() / ray_mask_sum
+        ret['b_l'] = 3 + (torch.log(inputs['beta']) * ray_mask[:, None]).sum() / ray_mask_sum  # TODO: what's the difference between this line here and the line in nerfw's losses?
+        ret['s_l'] = self.lambda_u * inputs['transient_occ'].mean()
+
+        for k, v in ret.items():
+            ret[k] = self.coef * v
+
+        return ret
+
+
 loss_dict = {'color': ColorLoss,
-             'nerfw': NerfWLoss}
+             'nerfw': NerfWLoss,
+             'nerfletw': NerfletWLoss}
