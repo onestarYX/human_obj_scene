@@ -370,6 +370,11 @@ class Sitcom3DDataset(RenderDataset):
                 self.id_to_image_path = pickle.load(f)
         else:
             image_paths = self.get_image_paths()
+            train_split = int(len(image_paths) * 0.8)
+            if self.split == 'train':
+                image_paths = image_paths[:train_split]
+            elif self.split == 'val':
+                image_paths = image_paths[train_split:]
 
             imdata = read_images_binary(os.path.join(self.environment_dir, 'colmap', 'images.bin'))
             img_path_to_id = {}
@@ -557,14 +562,14 @@ class Sitcom3DDataset(RenderDataset):
                 self.all_labels = self.all_labels[valid_rays]
                 self.all_ray_mask = self.all_ray_mask[valid_rays]
 
-        if self.split in ['val', 'test_train']:  # use the first image as val image (also in train)
-            if self.num_limit != -1:
-                self.val_id = 33
-            else:
-                self.val_id = self.image_path_to_id[self.image_filenames[0]]
-        else:  # for testing, create a parametric rendering path
-            # test poses and appearance index are defined in eval.py
-            pass
+        # if self.split in ['val', 'test_train']:  # use the first image as val image (also in train)
+        #     if self.num_limit != -1:
+        #         self.val_id = 33
+        #     else:
+        #         self.val_id = self.image_path_to_id[self.image_filenames[0]]
+        # else:  # for testing, create a parametric rendering path
+        #     # test poses and appearance index are defined in eval.py
+        #     pass
 
     def define_transforms(self):
         self.transform = T.ToTensor()
@@ -575,7 +580,7 @@ class Sitcom3DDataset(RenderDataset):
         if self.split == 'test_train':
             return len(self.img_ids)
         if self.split == 'val':
-            return self.val_num
+            return len(self.img_ids)
         return len(self.poses_test)
 
     def __getitem__(self, idx_or_id):
@@ -591,11 +596,7 @@ class Sitcom3DDataset(RenderDataset):
         elif self.split in ['val', 'test_train']:
             sample = {}
             if self.split == 'val':
-                if self.num_limit != -1:
-                    id_ = self.val_id
-                else:
-                    val_img_idx = np.random.randint(0, len(self.image_filenames))
-                    id_ = self.image_path_to_id[self.image_filenames[val_img_idx]]
+                id_ = self.img_ids[idx_or_id]
             else:
                 id_ = idx_or_id
             sample['c2w'] = c2w = torch.FloatTensor(self.get_pose(id_))

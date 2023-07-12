@@ -108,8 +108,7 @@ class NerfletWSystem(LightningModule):
         """
         load_ckpt(self.embedding_a, ckpt_path, model_name="embedding_a")
         load_ckpt(self.embedding_t, ckpt_path, model_name="embedding_t")
-        load_ckpt(self.nerf_coarse, ckpt_path, model_name="nerf_coarse")
-        load_ckpt(self.nerf_fine, ckpt_path, model_name="nerf_fine")
+        load_ckpt(self.nerflet, ckpt_path, model_name="nerflet")
         load_ckpt(self.learn_f, ckpt_path, model_name="learn_f")
         load_ckpt(self.learn_p, ckpt_path, model_name="learn_p")
 
