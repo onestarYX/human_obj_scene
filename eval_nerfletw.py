@@ -52,7 +52,7 @@ def batched_inference(models, embeddings,
                         N_importance,
                         chunk,
                         white_back,
-                        validation_version=True,
+                        test_time=True,
                         **kwargs)
 
         for k, v in rendered_ray_chunks.items():

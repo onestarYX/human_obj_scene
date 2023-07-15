@@ -167,7 +167,11 @@ def render_rays(models,
     model = models['nerflet']
     pred = model(xyz, rays_d, a_embedded, t_embedded)
 
-    '''Rendering'''
+    '''Rendering. We want:
+        static: occ, rgb, labels, depth
+        transient: occ, rgb, labels, depth, beta
+        combined: rgb, labels
+    '''
     results = {}
     # Retrieve values
     static_occ = pred['static_occ']
@@ -179,32 +183,51 @@ def render_rays(models,
     transient_beta = pred['transient_beta']
     transient_labels = pred['transient_label']
 
+    results['static_occ'] = static_occ
+    results['transient_occ'] = transient_occ
+
     # TODO: Might consider just using associated parts to determine occupancy. Here using max to stabilize training
     static_occ = torch.max(static_occ, dim=-1)[0]
-    # TODO: Need to get separate static and transient transmittance!!
     transmittance = shifted_cumprod((1 - static_occ + 1e-10) * (1 - transient_occ + 1e-10))
-    static_weights = static_occ * transmittance
-    static_weights = static_weights * (positive_rays[..., None])
-    static_rgb_map = torch.sum(static_weights[..., None] * static_rgb, dim=1)
-    static_depth = torch.sum(static_weights * z_vals, dim=1)
-    results['static_rgb_map'] = static_rgb_map
-    results['static_depth'] = static_depth
-    results['static_label'] = static_labels
+    # This is the "part" weights for static contents when you render the combined rgb/label/depth maps.
+    static_part_weights = static_occ * transmittance
+    static_part_weights = static_part_weights * (positive_rays[..., None])
+    static_part_rgb_map = torch.sum(static_part_weights[..., None] * static_rgb, dim=1)
+    results['static_label'] = static_labels     # TODO: Think about if it makes sense to add this with transient_part_labels below.
+    # This is the "part" weights for transient contents
+    transient_part_weights = transient_occ * transmittance
+    transient_part_rgb_map = torch.sum(transient_part_weights[..., None] * transient_rgb, dim=1)
+    transient_part_labels = torch.sum(transient_part_weights[..., None] * transient_labels, dim=1)
 
-    transient_weights = transient_occ * transmittance
-    transient_rgb_map = torch.sum(transient_weights[..., None] * transient_rgb, dim=1)
-    transient_depth = torch.sum(transient_weights * z_vals, dim=1)
-    transient_labels = torch.sum(transient_weights[..., None] * transient_labels, dim=1)
-    transient_ray_beta = torch.sum(transient_weights * transient_beta, dim=1)
-    results['transient_rgb_map'] = transient_rgb_map
-    results['transient_depth'] = transient_depth
-    results['transient_label'] = transient_labels
-    results['beta'] = transient_ray_beta
-    results['transient_occ'] = pred['transient_occ']
-
-    combined_rgb_map = static_rgb_map + transient_rgb_map
-    combined_labels = static_labels + transient_labels
+    combined_rgb_map = static_part_rgb_map + transient_part_rgb_map
+    combined_labels = static_labels + transient_part_labels
     results['combined_rgb_map'] = combined_rgb_map
     results['combined_label'] = combined_labels
+
+    # if test_time:
+    # Compute standalone static/transient rgb/depth/label maps
+    static_transmittance = shifted_cumprod(1 - static_occ + 1e-10)
+    static_weights = static_occ * static_transmittance
+    static_weights = static_weights * (positive_rays[..., None])
+    static_depth = torch.sum(static_weights * z_vals, dim=1)
+    static_rgb_map = torch.sum(static_weights[..., None] * static_rgb, dim=1)
+
+    results['static_depth'] = static_depth
+    results['static_rgb_map'] = static_rgb_map
+
+    transient_transmittance = shifted_cumprod(1 - transient_occ + 1e-10)
+    transient_weights = transient_occ * transient_transmittance
+    transient_depth = torch.sum(transient_weights * z_vals, dim=1)
+    transient_ray_beta = torch.sum(transient_weights * transient_beta, dim=1)
+    # Add beta_min AFTER the beta composition. Different from eq 10~12 in the paper.
+    # See "Notes on differences with the paper" in README.
+    transient_ray_beta += model.beta_min
+    transient_rgb_map = torch.sum(transient_weights[..., None] * transient_rgb, dim=1)
+    transient_ray_labels = torch.sum(transient_weights[..., None] * transient_labels, dim=1)
+
+    results['transient_depth'] = transient_depth
+    results['transient_rgb_map'] = transient_rgb_map
+    results['transient_label'] = transient_ray_labels
+    results['beta'] = transient_ray_beta
 
     return results

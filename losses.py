@@ -87,7 +87,7 @@ class NerfletWLoss(nn.Module):
         ret = {}
         # ret['c_l'] = 0.5 * (((inputs['combined_rgb_map'] - targets) ** 2) * ray_mask[:, None]).sum() / ray_mask_sum
         ret['f_l'] = (((inputs['combined_rgb_map'] - targets) ** 2 / (2 * inputs['beta'].unsqueeze(1) ** 2)) * ray_mask[:, None]).sum() / ray_mask_sum
-        ret['b_l'] = 3 + (torch.log(inputs['beta']) * ray_mask[:, None]).sum() / ray_mask_sum  # TODO: what's the difference between this line here and the line in nerfw's losses?
+        ret['b_l'] = 3 + (torch.log(inputs['beta']) * ray_mask).sum() / ray_mask_sum  # TODO: what's the difference between this line here and the paper eqn?
         ret['s_l'] = self.lambda_u * inputs['transient_occ'].mean()
 
         for k, v in ret.items():

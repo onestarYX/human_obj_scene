@@ -137,7 +137,7 @@ class NerfletWSystem(LightningModule):
                             self.hparams.N_importance,
                             self.hparams.chunk,  # chunk size is effective in val mode
                             self.train_dataset.white_back,
-                            validation_version=version == "val")
+                            test_time=version == "val")
 
             for k, v in rendered_ray_chunks.items():
                 results[k] += [v]
