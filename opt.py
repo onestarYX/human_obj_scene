@@ -229,6 +229,8 @@ def get_parser():
     parser.add_argument('--num_classes', type=int, default=127,
                         help='Number of semantic classes')
     parser.add_argument('--nerflet', default=False, action='store_true')
+    parser.add_argument('--num_parts', type=int, default=16,
+                        help='Number of part-NeRFs we want to use to represent the scene')
 
     return parser
 

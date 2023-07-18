@@ -316,7 +316,7 @@ class Nerflet(nn.Module):
         points_signs = (points_transformed > 0).float() * 2 - 1
         points_abs = points_transformed.abs()
         points_transformed = points_signs * torch.max(points_abs, points_abs.new_tensor(1e-5))
-        return points_transformed.squeeze()
+        return points_transformed.squeeze(-1)
 
     def transform_directions(self, directions, rotations):
         R = quaternions_to_rotation_matrices(rotations) # (M, 3, 3)

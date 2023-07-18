@@ -19,10 +19,6 @@ from datasets.sitcom3D import Sitcom3DDataset
 from datasets.ray_utils import get_ray_directions, get_rays, get_rays_batch_version
 
 # models
-from models.nerf import (
-    PosEmbedding,
-    NeRF
-)
 from models.nerflet import Nerflet
 # from models.rendering import render_rays
 from models.rendering_nerflet import render_rays
@@ -65,7 +61,8 @@ class NerfletWSystem(LightningModule):
 
         self.nerflet = Nerflet(N_emb_xyz=hparams.N_emb_xyz, N_emb_dir=hparams.N_emb_dir,
                                predict_label=self.hparams.predict_label,
-                               num_classes=self.hparams.num_classes)
+                               num_classes=self.hparams.num_classes,
+                               M=self.hparams.num_parts)
         self.models = {'nerflet': self.nerflet}
         self.models_to_train += [self.models]
         self.models_mm_to_train = []
