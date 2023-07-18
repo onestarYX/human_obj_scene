@@ -371,7 +371,7 @@ class Sitcom3DDataset(RenderDataset):
         else:
             image_paths = self.get_image_paths()
             train_split = int(len(image_paths) * 0.8)
-            if self.split == 'train':
+            if self.split == 'train' or self.split == 'test_train':
                 image_paths = image_paths[:train_split]
             elif self.split == 'val':
                 image_paths = image_paths[train_split:]
@@ -581,7 +581,6 @@ class Sitcom3DDataset(RenderDataset):
             return len(self.img_ids)
         if self.split == 'val':
             return len(self.img_ids)
-        return len(self.poses_test)
 
     def __getitem__(self, idx_or_id):
         if self.split == 'train':  # use data in the buffers
@@ -595,7 +594,7 @@ class Sitcom3DDataset(RenderDataset):
                       'ray_mask': self.all_rays[idx, 9]}
         elif self.split in ['val', 'test_train']:
             sample = {}
-            if self.split == 'val':
+            if self.split == 'val' or self.split == 'test_train':
                 id_ = self.img_ids[idx_or_id]
             else:
                 id_ = idx_or_id

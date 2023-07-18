@@ -177,6 +177,7 @@ def render_rays(models,
     static_occ = pred['static_occ']
     static_rgb = pred['static_rgb']
     static_labels = pred['static_label']
+    static_ray_associations = pred['static_ray_associations']
     positive_rays = pred['static_positive_rays']
     transient_rgb = pred['transient_rgb']
     transient_occ = pred['transient_occ']
@@ -185,6 +186,7 @@ def render_rays(models,
 
     results['static_occ'] = static_occ
     results['transient_occ'] = transient_occ
+    results['static_ray_associations'] = static_ray_associations
 
     # TODO: Might consider just using associated parts to determine occupancy. Here using max to stabilize training
     static_occ = torch.max(static_occ, dim=-1)[0]
@@ -214,6 +216,7 @@ def render_rays(models,
 
     results['static_depth'] = static_depth
     results['static_rgb_map'] = static_rgb_map
+
 
     transient_transmittance = shifted_cumprod(1 - transient_occ + 1e-10)
     transient_weights = transient_occ * transient_transmittance

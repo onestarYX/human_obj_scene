@@ -45,6 +45,8 @@ def np_visualize_depth(depth, normalization=None, cmap=cv2.COLORMAP_JET):
     """
     """
     x = np.nan_to_num(depth)  # change nan to 0
+    if x.sum() == 0:
+        return x.astype("uint8")
     mask = x == 0
     # try:
     if not normalization:

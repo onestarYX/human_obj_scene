@@ -84,7 +84,7 @@ if __name__ == '__main__':
     # kwargs['img_downscale'] = args.img_downscale
     kwargs['val_num'] = 5
     kwargs['use_cache'] = args.use_cache
-    dataset = dataset_name(split='val', img_downscale=args.img_downscale_val, **kwargs)
+    dataset = dataset_name(split='test_train', img_downscale=args.img_downscale_val, **kwargs)
 
     embedding_xyz = PosEmbedding(args.N_emb_xyz - 1, args.N_emb_xyz)
     embedding_dir = PosEmbedding(args.N_emb_dir - 1, args.N_emb_dir)
@@ -112,6 +112,7 @@ if __name__ == '__main__':
     os.makedirs(dir_name, exist_ok=True)
 
     label_colors = np.random.rand(args.num_classes, 3)
+    part_colors = np.random.rand(16, 3)
 
     iou_combined = []
     iou_static = []
@@ -163,11 +164,16 @@ if __name__ == '__main__':
             label_map_transient_pred = label_colors[label_transient_pred].reshape((h, w, 3))
             label_map_transient_pred = (label_map_transient_pred * 255).astype(np.uint8)
 
+        ray_associations = results['static_ray_associations'].cpu().numpy()
+        ray_association_map = part_colors[ray_associations].reshape((h, w, 3))
+        ray_association_map = (ray_association_map * 255).astype(np.uint8)
+
         row1 = np.concatenate([img_gt_, img_pred_], axis=1)
         row2 = np.concatenate([img_static_, depth_static_], axis=1)
         row3 = np.concatenate([label_map_gt, label_map_pred], axis=1)
         row4 = np.concatenate([label_map_static_pred, label_map_transient_pred], axis=1)
-        res_img = np.concatenate([row1, row2, row3, row4], axis=0)
+        row5 = np.concatenate([ray_association_map, np.zeros_like(ray_association_map)], axis=1)
+        res_img = np.concatenate([row1, row2, row3, row4, row5], axis=0)
         imageio.imwrite(os.path.join(dir_name, f'{i:03d}.png'), res_img)
 
     if args.predict_label:
