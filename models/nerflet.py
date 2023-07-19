@@ -64,7 +64,7 @@ class RayAssociator(nn.Module):
 
 class Nerflet(nn.Module):
     def __init__(self, D=8, W=256, skips=[4],
-                 N_emb_xyz=10, N_emb_dir=4, pos_dir_emb=True,
+                 N_emb_xyz=10, N_emb_dir=4, encode_t=True,
                  in_channels_a=48, in_channels_t=16,
                  predict_label=True, num_classes=127, beta_min=0.03,
                  M=16, dim_latent=128, scale_min=0.05, scale_max=2):
@@ -91,6 +91,7 @@ class Nerflet(nn.Module):
         self.W = W
         self.skips = skips
 
+        self.encode_t = encode_t
         self.in_channels_a = in_channels_a
         self.in_channels_t = in_channels_t
         self.beta_min = beta_min

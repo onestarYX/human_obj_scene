@@ -77,7 +77,7 @@ class NerfletWLoss(nn.Module):
         self.coef = coef
         self.lambda_u = lambda_u
 
-    def forward(self, inputs, targets, ray_mask):
+    def forward(self, inputs, targets, ray_mask, encode_t=True):
         ray_mask_sum = ray_mask.sum() + 1e-20
         # if ray_mask_sum < len(inputs['rgb_fine']):
         #     print(ray_mask_sum)
@@ -85,10 +85,12 @@ class NerfletWLoss(nn.Module):
         # print(inputs["transient_accumulation"].shape)
 
         ret = {}
-        # ret['c_l'] = 0.5 * (((inputs['combined_rgb_map'] - targets) ** 2) * ray_mask[:, None]).sum() / ray_mask_sum
-        ret['f_l'] = (((inputs['combined_rgb_map'] - targets) ** 2 / (2 * inputs['beta'].unsqueeze(1) ** 2)) * ray_mask[:, None]).sum() / ray_mask_sum
-        ret['b_l'] = 3 + (torch.log(inputs['beta']) * ray_mask).sum() / ray_mask_sum  # TODO: what's the difference between this line here and the paper eqn?
-        ret['s_l'] = self.lambda_u * inputs['transient_occ'].mean()
+        if encode_t:
+            ret['f_l'] = (((inputs['combined_rgb_map'] - targets) ** 2 / (2 * inputs['beta'].unsqueeze(1) ** 2)) * ray_mask[:, None]).sum() / ray_mask_sum
+            ret['b_l'] = 3 + (torch.log(inputs['beta']) * ray_mask).sum() / ray_mask_sum  # TODO: what's the difference between this line here and the paper eqn?
+            ret['s_l'] = self.lambda_u * inputs['transient_occ'].mean()
+        else:
+            ret['c_l'] = 0.5 * (((inputs['static_rgb_map'] - targets) ** 2) * ray_mask[:, None]).sum() / ray_mask_sum
 
         for k, v in ret.items():
             ret[k] = self.coef * v

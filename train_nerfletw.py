@@ -50,19 +50,20 @@ class NerfletWSystem(LightningModule):
         self.models_to_train = []
 
         self.embeddings = {}
-        if hparams.encode_a:
-            self.embedding_a = torch.nn.Embedding(hparams.N_vocab, hparams.N_a)
-            self.embeddings['a'] = self.embedding_a
-            self.models_to_train += [self.embedding_a]
-        if hparams.encode_t:
-            self.embedding_t = torch.nn.Embedding(hparams.N_vocab, hparams.N_tau)
-            self.embeddings['t'] = self.embedding_t
-            self.models_to_train += [self.embedding_t]
+        # if hparams.encode_a:
+        self.embedding_a = torch.nn.Embedding(hparams.N_vocab, hparams.N_a)
+        self.embeddings['a'] = self.embedding_a
+        self.models_to_train += [self.embedding_a]
+        # if hparams.encode_t:
+        self.embedding_t = torch.nn.Embedding(hparams.N_vocab, hparams.N_tau)
+        self.embeddings['t'] = self.embedding_t
+        self.models_to_train += [self.embedding_t]
 
         self.nerflet = Nerflet(N_emb_xyz=hparams.N_emb_xyz, N_emb_dir=hparams.N_emb_dir,
-                               predict_label=self.hparams.predict_label,
-                               num_classes=self.hparams.num_classes,
-                               M=self.hparams.num_parts)
+                               encode_t=hparams.encode_t,
+                               predict_label=hparams.predict_label,
+                               num_classes=hparams.num_classes,
+                               M=hparams.num_parts)
         self.models = {'nerflet': self.nerflet}
         self.models_to_train += [self.models]
         self.models_mm_to_train = []
@@ -129,8 +130,6 @@ class NerfletWSystem(LightningModule):
                             self.hparams.num_classes,
                             self.hparams.N_samples,
                             self.hparams.use_disp,
-                            self.hparams.perturb if version == "train" else 0,
-                            self.hparams.noise_std,
                             self.hparams.N_importance,
                             self.hparams.chunk,  # chunk size is effective in val mode
                             self.train_dataset.white_back,
@@ -189,15 +188,21 @@ class NerfletWSystem(LightningModule):
         rays, ray_mask = self.rays_from_batch(batch)
         rgbs, ts = batch['rgbs'], batch['ts']
         results = self.forward(rays, ts, version="train")
-        loss_d = self.loss(results, rgbs, ray_mask)
+        loss_d = self.loss(results, rgbs, ray_mask, self.hparams.encode_t)
         if self.hparams.predict_label:
-            label_pred = results['combined_label']
+            if self.hparams.encode_t:
+                label_pred = results['combined_label']
+            else:
+                label_pred = results['static_label']
             loss_d['label_cce'] = torch.nn.functional.cross_entropy(label_pred, batch['labels'].to(torch.long).squeeze())
         loss = sum(l for l in loss_d.values())
 
         with torch.no_grad():
             # typ = 'fine' if 'rgb_fine' in results else 'coarse'
-            psnr_ = psnr(results['combined_rgb_map'], rgbs)
+            if self.hparams.encode_t:
+                psnr_ = psnr(results['combined_rgb_map'], rgbs)
+            else:
+                psnr_ = psnr(results['static_rgb_map'], rgbs)
 
         self.log('lr', get_learning_rate(self.optimizer))
         self.log('train/loss', loss)
@@ -214,9 +219,12 @@ class NerfletWSystem(LightningModule):
         rgbs = rgbs.squeeze()  # (H*W, 3)
         ts = ts.squeeze()  # (H*W)
         results = self.forward(rays, ts, version="val")
-        loss_d = self.loss(results, rgbs, ray_mask)
+        loss_d = self.loss(results, rgbs, ray_mask, self.hparams.encode_t)
         if self.hparams.predict_label:
-            label_pred = results['combined_label']
+            if self.hparams.encode_t:
+                label_pred = results['combined_label']
+            else:
+                label_pred = results['static_label']
             loss_d['label_cce'] = torch.nn.functional.cross_entropy(label_pred, batch['labels'].to(torch.long).squeeze())
 
         loss = sum(l for l in loss_d.values())
@@ -236,7 +244,10 @@ class NerfletWSystem(LightningModule):
             # image = get_image_summary_from_vis_data(vis_data)
             # self.logger.experiment.add_image('val/GT_pred_depth', image, self.global_step)
 
-        psnr_ = psnr(results['combined_rgb_map'], rgbs)
+        if self.hparams.encode_t:
+            psnr_ = psnr(results['combined_rgb_map'], rgbs)
+        else:
+            psnr_ = psnr(results['static_rgb_map'], rgbs)
         log['val_psnr'] = psnr_
 
         return log
