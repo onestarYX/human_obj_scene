@@ -225,7 +225,7 @@ class Nerflet(nn.Module):
 
             static_occ_inputs = z_shape_ts.expand(max_points_inside_ellipsoid, -1, -1) # (max_pts, M, dim_latent)
             static_occ_inputs = torch.cat((static_pt_feat, static_occ_inputs), dim=-1)    # (max_pts, M, W+dim_latent)
-            static_occ_pred = self.static_occ(static_occ_inputs).squeeze(-1)  # (max_pts, M, 1)
+            static_occ_pred = self.static_occ(static_occ_inputs).squeeze(-1)  # (max_pts, M)
             # Return the predicted  into its original shape
             for i in range(self.M):
                 true_idx = points_in_mask[:, i].nonzero().squeeze()
@@ -234,9 +234,9 @@ class Nerflet(nn.Module):
                     static_occ[true_idx, i] = static_occ_pred[range(num_inds), i]
                     point_feat[true_idx, i, :] = static_pt_feat[range(num_inds), i, :]
 
-            static_occ = self.apply_sigmoid_with_sharpness(static_occ)
-            # Multiply the occupancy of ellipsoid with predicted sigma
-            static_occ = ellipoid_occ * static_occ
+        static_occ = self.apply_sigmoid_with_sharpness(static_occ)
+        # Multiply the occupancy of ellipsoid with predicted sigma
+        static_occ = ellipoid_occ * static_occ
 
         # TODO: think about what's more to add or remove
         prediction['static_ellipsoid_occ'] = ellipoid_occ.reshape(num_rays, num_pts_per_ray, -1)
