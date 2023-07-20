@@ -47,8 +47,6 @@ def batched_inference(models, embeddings,
                         num_classes,
                         N_samples,
                         use_disp,
-                        0,
-                        0,
                         N_importance,
                         chunk,
                         white_back,
@@ -89,14 +87,14 @@ if __name__ == '__main__':
     embedding_xyz = PosEmbedding(args.N_emb_xyz - 1, args.N_emb_xyz)
     embedding_dir = PosEmbedding(args.N_emb_dir - 1, args.N_emb_dir)
     embeddings = {'xyz': embedding_xyz, 'dir': embedding_dir}
-    if args.encode_a:
-        embedding_a = torch.nn.Embedding(args.N_vocab, args.N_a).cuda()
-        load_ckpt(embedding_a, args.ckpt_path, model_name='embedding_a')
-        embeddings['a'] = embedding_a
-    if args.encode_t:
-        embedding_t = torch.nn.Embedding(args.N_vocab, args.N_tau).cuda()
-        load_ckpt(embedding_t, args.ckpt_path, model_name='embedding_t')
-        embeddings['t'] = embedding_t
+
+    embedding_a = torch.nn.Embedding(args.N_vocab, args.N_a).cuda()
+    load_ckpt(embedding_a, args.ckpt_path, model_name='embedding_a')
+    embeddings['a'] = embedding_a
+
+    embedding_t = torch.nn.Embedding(args.N_vocab, args.N_tau).cuda()
+    load_ckpt(embedding_t, args.ckpt_path, model_name='embedding_t')
+    embeddings['t'] = embedding_t
 
     nerflet = Nerflet(N_emb_xyz=args.N_emb_xyz, N_emb_dir=args.N_emb_dir,
                       predict_label=args.predict_label,
@@ -145,24 +143,23 @@ if __name__ == '__main__':
         depth_static = depth_static.reshape(h, w, 1)
         depth_static_ = np.repeat(depth_static, 3, axis=2)
 
-        if args.predict_label:
-            label_gt = sample['labels'].to(torch.long).cpu().numpy()
-            label_map_gt = label_colors[label_gt].reshape((h, w, 3))
-            label_map_gt = (label_map_gt * 255).astype(np.uint8)
+        label_gt = sample['labels'].to(torch.long).cpu().numpy()
+        label_map_gt = label_colors[label_gt].reshape((h, w, 3))
+        label_map_gt = (label_map_gt * 255).astype(np.uint8)
 
-            label_pred = torch.argmax(results['combined_label'], dim=1).to(torch.long).cpu().numpy()
-            label_map_pred = label_colors[label_pred].reshape((h, w, 3))
-            label_map_pred = (label_map_pred * 255).astype(np.uint8)
-            iou_combined.append(compute_iou(label_pred, label_gt, args.num_classes))
+        label_pred = torch.argmax(results['combined_label'], dim=1).to(torch.long).cpu().numpy()
+        label_map_pred = label_colors[label_pred].reshape((h, w, 3))
+        label_map_pred = (label_map_pred * 255).astype(np.uint8)
+        iou_combined.append(compute_iou(label_pred, label_gt, args.num_classes))
 
-            label_static_pred = torch.argmax(results['static_label'], dim=1).to(torch.long).cpu().numpy()
-            label_map_static_pred = label_colors[label_static_pred].reshape((h, w, 3))
-            label_map_static_pred = (label_map_static_pred * 255).astype(np.uint8)
-            iou_static.append(compute_iou(label_static_pred, label_gt, args.num_classes))
+        label_static_pred = torch.argmax(results['static_label'], dim=1).to(torch.long).cpu().numpy()
+        label_map_static_pred = label_colors[label_static_pred].reshape((h, w, 3))
+        label_map_static_pred = (label_map_static_pred * 255).astype(np.uint8)
+        iou_static.append(compute_iou(label_static_pred, label_gt, args.num_classes))
 
-            label_transient_pred = torch.argmax(results['transient_label'], dim=1).to(torch.long).cpu().numpy()
-            label_map_transient_pred = label_colors[label_transient_pred].reshape((h, w, 3))
-            label_map_transient_pred = (label_map_transient_pred * 255).astype(np.uint8)
+        label_transient_pred = torch.argmax(results['transient_label'], dim=1).to(torch.long).cpu().numpy()
+        label_map_transient_pred = label_colors[label_transient_pred].reshape((h, w, 3))
+        label_map_transient_pred = (label_map_transient_pred * 255).astype(np.uint8)
 
         ray_associations = results['static_ray_associations'].cpu().numpy()
         ray_association_map = part_colors[ray_associations].reshape((h, w, 3))
