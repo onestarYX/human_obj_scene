@@ -136,7 +136,7 @@ def get_parser():
 
     parser.add_argument('--optimizer', type=str, default='adam',
                         help='optimizer type',
-                        choices=['sgd', 'adam', 'radam', 'ranger'])
+                        choices=['sgd', 'adam', 'radam', 'ranger', 'rmsprop'])
     parser.add_argument('--lr', type=float, default=5e-4,
                         help='learning rate')
     parser.add_argument('--momentum', type=float, default=0.9,

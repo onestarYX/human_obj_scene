@@ -36,6 +36,9 @@ def get_optimizer(hparams, models):
     elif hparams.optimizer == 'ranger':
         optimizer = optim.Ranger(parameters, lr=hparams.lr, eps=eps,
                                  weight_decay=hparams.weight_decay)
+    elif hparams.optimizer == 'rmsprop':
+        optimizer = optim.RMSprop(parameters, lr=hparams.lr, eps=eps,
+                                  weight_decay=hparams.weight_decay)
     else:
         raise ValueError('optimizer not recognized!')
 
