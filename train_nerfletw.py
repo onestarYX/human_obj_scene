@@ -16,6 +16,7 @@ from pytorch_lightning.loggers import TestTubeLogger
 from einops import repeat
 
 from datasets.sitcom3D import Sitcom3DDataset
+from datasets.blender import BlenderDataset
 from datasets.ray_utils import get_ray_directions, get_rays, get_rays_batch_version
 
 # models
@@ -75,31 +76,36 @@ class NerfletWSystem(LightningModule):
         self.height = None
 
     def init_datasets(self):
-        dataset = Sitcom3DDataset
-        kwargs = {'environment_dir': self.hparams.environment_dir,
-                  'near_far_version': self.hparams.near_far_version}
-        # kwargs['img_downscale'] = self.hparams.img_downscale
-        kwargs['val_num'] = self.hparams.num_gpus
-        kwargs['use_cache'] = self.hparams.use_cache
-        kwargs['num_limit'] = self.hparams.num_limit
-        self.train_dataset = dataset(split='train' if not self.eval_only else 'val',
-                                     img_downscale=self.hparams.img_downscale, **kwargs)
-        self.val_dataset = dataset(split='val', img_downscale=self.hparams.img_downscale_val, **kwargs)
+        if self.hparams.dataset_name == 'sitcom3D':
+            dataset = Sitcom3DDataset
+            kwargs = {'environment_dir': self.hparams.environment_dir,
+                      'near_far_version': self.hparams.near_far_version}
+            # kwargs['img_downscale'] = self.hparams.img_downscale
+            kwargs['val_num'] = self.hparams.num_gpus
+            kwargs['use_cache'] = self.hparams.use_cache
+            kwargs['num_limit'] = self.hparams.num_limit
+            self.train_dataset = dataset(split='train' if not self.eval_only else 'val',
+                                         img_downscale=self.hparams.img_downscale, **kwargs)
+            self.val_dataset = dataset(split='val', img_downscale=self.hparams.img_downscale_val, **kwargs)
 
-        # if self.is_learning_pose():
-        # NOTE(ethan): self.train_dataset.poses is all the poses, even those in the val dataset
-        train_poses = torch.FloatTensor(self.train_dataset.poses)  # (N, 3, 4)
-        train_poses = torch.cat([train_poses, torch.zeros_like(train_poses[:, 0:1, :])], dim=1)
-        train_poses[:, 3, 3] = 1.0
-        self.learn_f = LearnFocal(len(train_poses), self.hparams.learn_f).cuda()
-        self.learn_p = LearnPose(len(train_poses), self.hparams.learn_r, self.hparams.learn_t,
-                                 init_c2w=train_poses).cuda()
-        self.models_mm = {}
-        self.models_mm["learn_f"] = self.learn_f
-        self.models_mm["learn_p"] = self.learn_p
-        self.models_mm_to_train += [self.learn_f]
-        self.models_mm_to_train += [self.learn_p]
-
+            # if self.is_learning_pose():
+            # NOTE(ethan): self.train_dataset.poses is all the poses, even those in the val dataset
+            train_poses = torch.FloatTensor(self.train_dataset.poses)  # (N, 3, 4)
+            train_poses = torch.cat([train_poses, torch.zeros_like(train_poses[:, 0:1, :])], dim=1)
+            train_poses[:, 3, 3] = 1.0
+            self.learn_f = LearnFocal(len(train_poses), self.hparams.learn_f).cuda()
+            self.learn_p = LearnPose(len(train_poses), self.hparams.learn_r, self.hparams.learn_t,
+                                     init_c2w=train_poses).cuda()
+            self.models_mm = {}
+            self.models_mm["learn_f"] = self.learn_f
+            self.models_mm["learn_p"] = self.learn_p
+            self.models_mm_to_train += [self.learn_f]
+            self.models_mm_to_train += [self.learn_p]
+        elif self.hparams.dataset_name == 'blender':
+            self.train_dataset = BlenderDataset(root_dir=self.hparams.environment_dir,
+                                                img_wh=self.hparams.img_wh, split='train')
+            self.val_dataset = BlenderDataset(root_dir=self.hparams.environment_dir,
+                                              img_wh=self.hparams.img_wh, split='val')
 
     def load_from_ckpt_path(self, ckpt_path):
         """TODO(ethan): move this elsewhere
@@ -291,7 +297,7 @@ def main(hparams):
                       gpus=hparams.num_gpus,
                       accelerator='ddp' if hparams.num_gpus > 1 else None,
                       num_sanity_val_steps=1,
-                      val_check_interval=int(1000),  # run val every int(X) batches
+                      val_check_interval=int(4000),  # run val every int(X) batches
                       benchmark=True,
                       #   profiler="simple" if hparams.num_gpus == 1 else None
                       )

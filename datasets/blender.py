@@ -107,15 +107,17 @@ class BlenderDataset(Dataset):
     def __len__(self):
         if self.split == 'train':
             return len(self.all_rays)
-        if self.split == 'val':
-            return 8 # only validate 8 images (to support <=8 gpus)
+        if self.split == 'val' or self.split == 'test_train':
+            return 1 # only validate 8 images (to support <=8 gpus)
         return len(self.meta['frames'])
 
     def __getitem__(self, idx):
         if self.split == 'train': # use data in the buffers
             sample = {'rays': self.all_rays[idx, :8],
                       'ts': self.all_rays[idx, 8].long(),
-                      'rgbs': self.all_rgbs[idx]}
+                      'rgbs': self.all_rgbs[idx],
+                      'labels': 0,
+                      'ray_mask': torch.ones_like(self.all_rays[idx, 0], dtype=torch.int)}
 
         else: # create data for each image separately
             frame = self.meta['frames'][idx]
@@ -143,17 +145,20 @@ class BlenderDataset(Dataset):
                       'ts': t * torch.ones(len(rays), dtype=torch.long),
                       'rgbs': img,
                       'c2w': c2w,
-                      'valid_mask': valid_mask}
+                      'valid_mask': valid_mask,
+                      'labels': 0,
+                      'ray_mask': torch.ones_like(rays[:, 0], dtype=torch.int)
+                      }
 
-            if self.split == 'test_train' and self.perturbation:
-                 # append the original (unperturbed) image
-                img = Image.open(os.path.join(self.root_dir, f"{frame['file_path']}.png"))
-                img = img.resize(self.img_wh, Image.LANCZOS)
-                img = self.transform(img) # (4, H, W)
-                valid_mask = (img[-1]>0).flatten() # (H*W) valid color area
-                img = img.view(4, -1).permute(1, 0) # (H*W, 4) RGBA
-                img = img[:, :3]*img[:, -1:] + (1-img[:, -1:]) # blend A to RGB
-                sample['original_rgbs'] = img
-                sample['original_valid_mask'] = valid_mask
+            # if self.split == 'test_train' and self.perturbation:
+            #      # append the original (unperturbed) image
+            #     img = Image.open(os.path.join(self.root_dir, f"{frame['file_path']}.png"))
+            #     img = img.resize(self.img_wh, Image.LANCZOS)
+            #     img = self.transform(img) # (4, H, W)
+            #     valid_mask = (img[-1]>0).flatten() # (H*W) valid color area
+            #     img = img.view(4, -1).permute(1, 0) # (H*W, 4) RGBA
+            #     img = img[:, :3]*img[:, -1:] + (1-img[:, -1:]) # blend A to RGB
+            #     sample['original_rgbs'] = img
+            #     sample['original_valid_mask'] = valid_mask
 
         return sample

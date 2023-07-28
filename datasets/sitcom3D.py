@@ -628,38 +628,6 @@ class Sitcom3DDataset(RenderDataset):
             sample['ts2'] = self.id_to_idx[id_] * torch.ones(len(rays), dtype=torch.long)
             sample['img_wh'] = torch.LongTensor([img_w, img_h])
         else:
-            idx = idx_or_id
-            sample = {}
-            sample['c2w'] = c2w = torch.FloatTensor(self.poses_test[idx][:3])
-            K = self.Ks_test[idx]
-            H, W = round(K[1, 2] * 2.0), round(K[0, 2] * 2.0)  # using "round" bc of floating precision
-            directions = get_ray_directions(H, W, K)
-            rays_o, rays_d = get_rays(directions, c2w)
-            # near, far = 0, 5
-            nears, fars, ray_mask = self.get_nears_fars_from_rays_or_cam(rays_o, rays_d, c2w=c2w)
-            rays = torch.cat([rays_o, rays_d,
-                              nears,
-                              fars],
-                             1)
-            id_ = self.appearance_test[idx]
-            sample['rays'] = rays
-            sample['ray_mask'] = ray_mask.squeeze()
-            sample['ts'] = id_ * torch.ones(len(rays), dtype=torch.long)
-            sample['ts2'] = self.id_to_idx[id_] * torch.ones(len(rays), dtype=torch.long)
-
-            img = self.get_img(id_)
-            img_h, img_w, _ = img.shape
-            img = self.transform(img)  # (3, h, w)
-            img = img.view(3, -1).permute(1, 0)  # (h*w, 3) RGB
-            sample['rgbs'] = img
-
-            mask = self.get_mask(id_).astype(float)
-            sample['human_mask'] = self.transform(mask).view(-1) < 1.0
-
-            label = self.get_panoptic_labels(id_).astype(float)
-            label = self.transform(label).view(-1)
-            sample['labels'] = label
-
-            sample['img_wh'] = torch.LongTensor([W, H])
+            raise NotImplementedError(f"Split {self.split} of dataset is not implemented")
 
         return sample
