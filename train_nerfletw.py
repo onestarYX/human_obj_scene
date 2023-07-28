@@ -189,12 +189,6 @@ class NerfletWSystem(LightningModule):
         rgbs, ts, gt_labels = batch['rgbs'], batch['ts'], batch['labels']
         results = self.forward(rays, ts, version="train")
         loss_d = self.loss(results, rgbs, gt_labels, ray_mask, self.hparams.encode_t, self.hparams.predict_label)
-        if self.hparams.predict_label:
-            if self.hparams.encode_t:
-                label_pred = results['combined_label']
-            else:
-                label_pred = results['static_label']
-            loss_d['label_cce'] = torch.nn.functional.cross_entropy(label_pred, batch['labels'].to(torch.long).squeeze())
         loss = sum(l for l in loss_d.values())
 
         with torch.no_grad():
@@ -220,13 +214,6 @@ class NerfletWSystem(LightningModule):
         ts = ts.squeeze()  # (H*W)
         results = self.forward(rays, ts, version="val")
         loss_d = self.loss(results, rgbs, gt_labels, ray_mask, self.hparams.encode_t, self.hparams.predict_label)
-        if self.hparams.predict_label:
-            if self.hparams.encode_t:
-                label_pred = results['combined_label']
-            else:
-                label_pred = results['static_label']
-            loss_d['label_cce'] = torch.nn.functional.cross_entropy(label_pred, batch['labels'].to(torch.long).squeeze())
-
         loss = sum(l for l in loss_d.values())
         log = {'val_loss': loss}
         # typ = 'fine' if 'rgb_fine' in results else 'coarse'

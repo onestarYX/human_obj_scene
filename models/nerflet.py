@@ -279,8 +279,9 @@ class Nerflet(nn.Module):
         prediction['static_rgb'] = static_rgb_pred.reshape(num_rays, num_pts_per_ray, -1)
 
         '''Get static semantics'''
-        static_label_logits = self.part_label_logits(ray_associations)
-        prediction['static_label'] = static_label_logits
+        if self.predict_label:
+            static_label_logits = self.part_label_logits(ray_associations)
+            prediction['static_label'] = static_label_logits
 
 
         '''========================Transient predictions========================'''
@@ -298,12 +299,12 @@ class Nerflet(nn.Module):
             transient_occ = self.transient_occ(transient_encoding)
             transient_rgb = self.transient_rgb(transient_encoding)
             transient_beta = self.transient_beta(transient_encoding)
-            transient_label = self.transient_label(transient_encoding)
-
             prediction['transient_occ'] = transient_occ.reshape(num_rays, num_pts_per_ray)
             prediction['transient_rgb'] = transient_rgb.reshape(num_rays, num_pts_per_ray, 3)
             prediction['transient_beta'] = transient_beta.reshape(num_rays, num_pts_per_ray)
-            prediction['transient_label'] = transient_label.reshape(num_rays, num_pts_per_ray, -1)
+            if self.predict_label:
+                transient_label = self.transient_label(transient_encoding)
+                prediction['transient_label'] = transient_label.reshape(num_rays, num_pts_per_ray, -1)
 
         return prediction
 
