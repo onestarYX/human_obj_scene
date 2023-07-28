@@ -54,10 +54,10 @@ class NerfletWSystem(LightningModule):
         self.embedding_a = torch.nn.Embedding(hparams.N_vocab, hparams.N_a)
         self.embeddings['a'] = self.embedding_a
         self.models_to_train += [self.embedding_a]
-        # if hparams.encode_t:
-        self.embedding_t = torch.nn.Embedding(hparams.N_vocab, hparams.N_tau)
-        self.embeddings['t'] = self.embedding_t
-        self.models_to_train += [self.embedding_t]
+        if hparams.encode_t:
+            self.embedding_t = torch.nn.Embedding(hparams.N_vocab, hparams.N_tau)
+            self.embeddings['t'] = self.embedding_t
+            self.models_to_train += [self.embedding_t]
 
         self.nerflet = Nerflet(N_emb_xyz=hparams.N_emb_xyz, N_emb_dir=hparams.N_emb_dir,
                                encode_t=hparams.encode_t,
@@ -186,9 +186,9 @@ class NerfletWSystem(LightningModule):
 
     def training_step(self, batch, batch_nb):
         rays, ray_mask = self.rays_from_batch(batch)
-        rgbs, ts = batch['rgbs'], batch['ts']
+        rgbs, ts, gt_labels = batch['rgbs'], batch['ts'], batch['labels']
         results = self.forward(rays, ts, version="train")
-        loss_d = self.loss(results, rgbs, ray_mask, self.hparams.encode_t)
+        loss_d = self.loss(results, rgbs, gt_labels, ray_mask, self.hparams.encode_t, self.hparams.predict_label)
         if self.hparams.predict_label:
             if self.hparams.encode_t:
                 label_pred = results['combined_label']
@@ -214,12 +214,12 @@ class NerfletWSystem(LightningModule):
 
     def validation_step(self, batch, batch_nb):
         rays, ray_mask = self.rays_from_batch(batch)
-        rgbs, ts = batch['rgbs'], batch['ts']
+        rgbs, ts, gt_labels = batch['rgbs'], batch['ts'], batch['labels']
         rays = rays.squeeze()  # (H*W, 3)
         rgbs = rgbs.squeeze()  # (H*W, 3)
         ts = ts.squeeze()  # (H*W)
         results = self.forward(rays, ts, version="val")
-        loss_d = self.loss(results, rgbs, ray_mask, self.hparams.encode_t)
+        loss_d = self.loss(results, rgbs, gt_labels, ray_mask, self.hparams.encode_t, self.hparams.predict_label)
         if self.hparams.predict_label:
             if self.hparams.encode_t:
                 label_pred = results['combined_label']

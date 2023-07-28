@@ -98,7 +98,7 @@ if __name__ == '__main__':
 
     nerflet = Nerflet(N_emb_xyz=args.N_emb_xyz, N_emb_dir=args.N_emb_dir,
                       predict_label=args.predict_label,
-                      num_classes=args.num_classes).cuda()
+                      num_classes=args.num_classes, M=args.num_parts).cuda()
 
     load_ckpt(nerflet, args.ckpt_path, model_name='nerflet')
 

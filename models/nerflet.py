@@ -131,17 +131,18 @@ class Nerflet(nn.Module):
         #     self.static_label = nn.Linear(W + self.dim_latent, num_classes)
 
         # Transient output layers
-        self.transient_encoding = nn.Sequential(
-            nn.Linear(W + in_channels_t, W // 2), nn.ReLU(True),
-            nn.Linear(W // 2, W // 2), nn.ReLU(True),
-            nn.Linear(W // 2, W // 2), nn.ReLU(True),
-            nn.Linear(W // 2, W // 2), nn.ReLU(True))
-        # transient output layers
-        self.transient_occ = nn.Sequential(nn.Linear(W // 2, 1), nn.Sigmoid())
-        self.transient_rgb = nn.Sequential(nn.Linear(W // 2, 3), nn.Sigmoid())
-        self.transient_beta = nn.Sequential(nn.Linear(W // 2, 1), nn.Softplus())
-        if self.predict_label:
-            self.transient_label = nn.Linear(W // 2, num_classes)
+        if self.encode_t:
+            self.transient_encoding = nn.Sequential(
+                nn.Linear(W + in_channels_t, W // 2), nn.ReLU(True),
+                nn.Linear(W // 2, W // 2), nn.ReLU(True),
+                nn.Linear(W // 2, W // 2), nn.ReLU(True),
+                nn.Linear(W // 2, W // 2), nn.ReLU(True))
+            # transient output layers
+            self.transient_occ = nn.Sequential(nn.Linear(W // 2, 1), nn.Sigmoid())
+            self.transient_rgb = nn.Sequential(nn.Linear(W // 2, 3), nn.Sigmoid())
+            self.transient_beta = nn.Sequential(nn.Linear(W // 2, 1), nn.Softplus())
+            if self.predict_label:
+                self.transient_label = nn.Linear(W // 2, num_classes)
 
         # Latent codes for shape and texture
         self.z_shape = nn.Embedding(num_embeddings=self.M, embedding_dim=self.dim_latent)
@@ -283,25 +284,26 @@ class Nerflet(nn.Module):
 
 
         '''========================Transient predictions========================'''
-        transient_pt_emb = self.embedding_xyz(pts)
-        transient_pt_feat = transient_pt_emb
-        for i in range(self.D):
-            if i in self.skips:
-                transient_pt_feat = torch.cat([transient_pt_emb, transient_pt_feat], dim=-1)
-            transient_pt_feat = getattr(self, f"xyz_encoding_{i + 1}")(transient_pt_feat)  # (N, W)
+        if self.encode_t:
+            transient_pt_emb = self.embedding_xyz(pts)
+            transient_pt_feat = transient_pt_emb
+            for i in range(self.D):
+                if i in self.skips:
+                    transient_pt_feat = torch.cat([transient_pt_emb, transient_pt_feat], dim=-1)
+                transient_pt_feat = getattr(self, f"xyz_encoding_{i + 1}")(transient_pt_feat)  # (N, W)
 
-        t_emb_ = t_emb.unsqueeze(1).expand(-1, num_pts_per_ray, -1).reshape(-1, self.in_channels_t)
-        transient_input = torch.cat((transient_pt_feat, t_emb_), dim=-1)
-        transient_encoding = self.transient_encoding(transient_input)
-        transient_occ = self.transient_occ(transient_encoding)
-        transient_rgb = self.transient_rgb(transient_encoding)
-        transient_beta = self.transient_beta(transient_encoding)
-        transient_label = self.transient_label(transient_encoding)
+            t_emb_ = t_emb.unsqueeze(1).expand(-1, num_pts_per_ray, -1).reshape(-1, self.in_channels_t)
+            transient_input = torch.cat((transient_pt_feat, t_emb_), dim=-1)
+            transient_encoding = self.transient_encoding(transient_input)
+            transient_occ = self.transient_occ(transient_encoding)
+            transient_rgb = self.transient_rgb(transient_encoding)
+            transient_beta = self.transient_beta(transient_encoding)
+            transient_label = self.transient_label(transient_encoding)
 
-        prediction['transient_occ'] = transient_occ.reshape(num_rays, num_pts_per_ray)
-        prediction['transient_rgb'] = transient_rgb.reshape(num_rays, num_pts_per_ray, 3)
-        prediction['transient_beta'] = transient_beta.reshape(num_rays, num_pts_per_ray)
-        prediction['transient_label'] = transient_label.reshape(num_rays, num_pts_per_ray, -1)
+            prediction['transient_occ'] = transient_occ.reshape(num_rays, num_pts_per_ray)
+            prediction['transient_rgb'] = transient_rgb.reshape(num_rays, num_pts_per_ray, 3)
+            prediction['transient_beta'] = transient_beta.reshape(num_rays, num_pts_per_ray)
+            prediction['transient_label'] = transient_label.reshape(num_rays, num_pts_per_ray, -1)
 
         return prediction
 
