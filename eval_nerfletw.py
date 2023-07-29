@@ -18,7 +18,7 @@ from models.rendering_nerflet import (
 )
 
 from datasets.sitcom3D import Sitcom3DDataset
-
+from datasets.blender import BlenderDataset
 import numpy as np
 
 from metrics import psnr
@@ -75,14 +75,17 @@ def compute_iou(pred, gt, num_cls):
 
 if __name__ == '__main__':
     args = get_opts()
-    dataset_name = Sitcom3DDataset
-
-    kwargs = {'environment_dir': args.environment_dir,
-              'near_far_version': args.near_far_version}
-    # kwargs['img_downscale'] = args.img_downscale
-    kwargs['val_num'] = 5
-    kwargs['use_cache'] = args.use_cache
-    dataset = dataset_name(split='test_train', img_downscale=args.img_downscale_val, **kwargs)
+    if args.dataset_name == 'sitcom3D':
+        kwargs = {'environment_dir': args.environment_dir,
+                  'near_far_version': args.near_far_version}
+        # kwargs['img_downscale'] = args.img_downscale
+        kwargs['val_num'] = 5
+        kwargs['use_cache'] = args.use_cache
+        dataset = Sitcom3DDataset(split='test_train', img_downscale=args.img_downscale_val, **kwargs)
+    elif args.dataset_name == 'blender':
+        kwargs = {}
+        dataset = BlenderDataset(root_dir=args.environment_dir,
+                                 img_wh=args.img_wh, split='test_train')
 
     embedding_xyz = PosEmbedding(args.N_emb_xyz - 1, args.N_emb_xyz)
     embedding_dir = PosEmbedding(args.N_emb_dir - 1, args.N_emb_dir)
@@ -92,12 +95,13 @@ if __name__ == '__main__':
     load_ckpt(embedding_a, args.ckpt_path, model_name='embedding_a')
     embeddings['a'] = embedding_a
 
-    embedding_t = torch.nn.Embedding(args.N_vocab, args.N_tau).cuda()
-    load_ckpt(embedding_t, args.ckpt_path, model_name='embedding_t')
-    embeddings['t'] = embedding_t
+    if args.encode_t:
+        embedding_t = torch.nn.Embedding(args.N_vocab, args.N_tau).cuda()
+        load_ckpt(embedding_t, args.ckpt_path, model_name='embedding_t')
+        embeddings['t'] = embedding_t
 
     nerflet = Nerflet(N_emb_xyz=args.N_emb_xyz, N_emb_dir=args.N_emb_dir,
-                      predict_label=args.predict_label,
+                      encode_t=args.encode_t, predict_label=args.predict_label,
                       num_classes=args.num_classes, M=args.num_parts).cuda()
 
     load_ckpt(nerflet, args.ckpt_path, model_name='nerflet')
@@ -125,52 +129,65 @@ if __name__ == '__main__':
                                     dataset.white_back,
                                     **kwargs)
 
-        w, h = sample['img_wh']
+        rows = []
 
-        img_pred = np.clip(results['combined_rgb_map'].view(h, w, 3).cpu().numpy(), 0, 1)
+        # GT image and predicted image
+        if args.dataset_name == 'sitcom3D':
+            w, h = sample['img_wh']
+        else:
+            w, h = args.img_wh
+        if args.encode_t:
+            img_pred = np.clip(results['combined_rgb_map'].view(h, w, 3).cpu().numpy(), 0, 1)
+        else:
+            img_pred = np.clip(results['static_rgb_map'].view(h, w, 3).cpu().numpy(), 0, 1)
         img_pred_ = (img_pred * 255).astype(np.uint8)
-
         rgbs = sample['rgbs']
         img_gt = rgbs.view(h, w, 3)
         psnrs += [psnr(img_gt, img_pred).item()]
         img_gt_ = np.clip(img_gt.cpu().numpy(), 0, 1)
         img_gt_ = (img_gt_ * 255).astype(np.uint8)
+        rows.append(np.concatenate([img_gt_, img_pred_], axis=1))
 
+        # Predicted static image and predicted static depth
         img_static = np.clip(results['static_rgb_map'].view(h, w, 3).cpu().numpy(), 0, 1)
         img_static_ = (img_static * 255).astype(np.uint8)
-
         depth_static = np.array(np_visualize_depth(results['static_depth'].cpu().numpy(), cmap=cv2.COLORMAP_BONE))
         depth_static = depth_static.reshape(h, w, 1)
         depth_static_ = np.repeat(depth_static, 3, axis=2)
+        rows.append(np.concatenate([img_static_, depth_static_], axis=1))
 
-        label_gt = sample['labels'].to(torch.long).cpu().numpy()
-        label_map_gt = label_colors[label_gt].reshape((h, w, 3))
-        label_map_gt = (label_map_gt * 255).astype(np.uint8)
+        # gt label and pred label
+        if args.predict_label:
+            label_gt = sample['labels'].to(torch.long).cpu().numpy()
+            label_map_gt = label_colors[label_gt].reshape((h, w, 3))
+            label_map_gt = (label_map_gt * 255).astype(np.uint8)
+            if args.encode_t:
+                label_pred = results['combined_label']
+            else:
+                label_pred = results['static_label']
+            label_pred = torch.argmax(label_pred, dim=1).to(torch.long).cpu().numpy()
+            label_map_pred = label_colors[label_pred].reshape((h, w, 3))
+            label_map_pred = (label_map_pred * 255).astype(np.uint8)
+            iou_combined.append(compute_iou(label_pred, label_gt, args.num_classes))
+            rows.append(np.concatenate([label_map_gt, label_map_pred], axis=1))
 
-        label_pred = torch.argmax(results['combined_label'], dim=1).to(torch.long).cpu().numpy()
-        label_map_pred = label_colors[label_pred].reshape((h, w, 3))
-        label_map_pred = (label_map_pred * 255).astype(np.uint8)
-        iou_combined.append(compute_iou(label_pred, label_gt, args.num_classes))
+            if args.encode_t:
+                label_static_pred = torch.argmax(results['static_label'], dim=1).to(torch.long).cpu().numpy()
+                label_map_static_pred = label_colors[label_static_pred].reshape((h, w, 3))
+                label_map_static_pred = (label_map_static_pred * 255).astype(np.uint8)
+                iou_static.append(compute_iou(label_static_pred, label_gt, args.num_classes))
 
-        label_static_pred = torch.argmax(results['static_label'], dim=1).to(torch.long).cpu().numpy()
-        label_map_static_pred = label_colors[label_static_pred].reshape((h, w, 3))
-        label_map_static_pred = (label_map_static_pred * 255).astype(np.uint8)
-        iou_static.append(compute_iou(label_static_pred, label_gt, args.num_classes))
-
-        label_transient_pred = torch.argmax(results['transient_label'], dim=1).to(torch.long).cpu().numpy()
-        label_map_transient_pred = label_colors[label_transient_pred].reshape((h, w, 3))
-        label_map_transient_pred = (label_map_transient_pred * 255).astype(np.uint8)
+                label_transient_pred = torch.argmax(results['transient_label'], dim=1).to(torch.long).cpu().numpy()
+                label_map_transient_pred = label_colors[label_transient_pred].reshape((h, w, 3))
+                label_map_transient_pred = (label_map_transient_pred * 255).astype(np.uint8)
+                rows.append(np.concatenate([label_map_static_pred, label_map_transient_pred], axis=1))
 
         ray_associations = results['static_ray_associations'].cpu().numpy()
         ray_association_map = part_colors[ray_associations].reshape((h, w, 3))
         ray_association_map = (ray_association_map * 255).astype(np.uint8)
+        rows.append(np.concatenate([ray_association_map, np.zeros_like(ray_association_map)], axis=1))
 
-        row1 = np.concatenate([img_gt_, img_pred_], axis=1)
-        row2 = np.concatenate([img_static_, depth_static_], axis=1)
-        row3 = np.concatenate([label_map_gt, label_map_pred], axis=1)
-        row4 = np.concatenate([label_map_static_pred, label_map_transient_pred], axis=1)
-        row5 = np.concatenate([ray_association_map, np.zeros_like(ray_association_map)], axis=1)
-        res_img = np.concatenate([row1, row2, row3, row4, row5], axis=0)
+        res_img = np.concatenate(rows, axis=0)
         imageio.imwrite(os.path.join(dir_name, f'{i:03d}.png'), res_img)
 
     if args.predict_label:

@@ -107,9 +107,10 @@ class BlenderDataset(Dataset):
     def __len__(self):
         if self.split == 'train':
             return len(self.all_rays)
-        if self.split == 'val' or self.split == 'test_train':
+        if self.split == 'val':
             return 1 # only validate 8 images (to support <=8 gpus)
-        return len(self.meta['frames'])
+        if self.split == 'test_train':
+            return len(self.meta['frames'])
 
     def __getitem__(self, idx):
         if self.split == 'train': # use data in the buffers
