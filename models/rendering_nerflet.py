@@ -133,40 +133,9 @@ def render_rays(models,
         result: dictionary containing final rgb and depth maps for coarse and fine models
     """
     # Decompose the inputs
-    N_rays = rays.shape[0]
-    rays_o, rays_d = rays[:, 0:3], rays[:, 3:6]  # both (N_rays, 3)
-    near, far = rays[:, 6:7], rays[:, 7:8]  # both (N_rays, 1)
-    # Embed direction
-    # dir_embedded = embedding_dir(kwargs.get('view_dir', rays_d))
-
-    rays_o = rearrange(rays_o, 'n1 c -> n1 1 c')
-    rays_d = rearrange(rays_d, 'n1 c -> n1 1 c')
-
-    # Sample depth points
-    z_steps = torch.linspace(0, 1, N_samples, device=rays.device)
-    if not use_disp:  # use linear sampling in depth space
-        z_vals = near * (1 - z_steps) + far * z_steps
-    else:  # use linear sampling in disparity space
-        z_vals = 1 / (1 / near * (1 - z_steps) + 1 / far * z_steps)
-
-    z_vals = z_vals.expand(N_rays, N_samples)
-
-    # TODO: extend coarse and fine NeRF later
-    # if N_importance > 0:  # sample points for fine model
-    #     z_vals_mid = 0.5 * (z_vals[:, :-1] + z_vals[:, 1:])  # (N_rays, N_samples-1) interval mid points
-    #     z_vals_ = sample_pdf(z_vals_mid, results['weights_coarse'][:, 1:-1].detach(),
-    #                          N_importance, det=(perturb == 0))
-    #     # detach so that grad doesn't propogate to weights_coarse from here
-    #     z_vals = torch.sort(torch.cat([z_vals, z_vals_], -1), -1)[0]
-
-    xyz = rays_o + rays_d * rearrange(z_vals, 'n1 n2 -> n1 n2 1')
+    xyz, rays_d, z_vals = get_input_from_rays(rays, N_samples, use_disp)
     model = models['nerflet']
-    a_embedded = embeddings['a'](ts)
-    if model.encode_t:
-        t_embedded = embeddings['t'](ts)
-        pred = model(xyz, rays_d, a_embedded, t_embedded)
-    else:
-        pred = model(xyz, rays_d, a_embedded, t_emb=None)
+    pred = get_nerflet_pred(model, embeddings, xyz, rays_d, ts)
 
     '''Rendering. We want:
         static: occ, rgb, labels, depth
@@ -240,3 +209,44 @@ def render_rays(models,
             results['transient_label'] = transient_ray_labels
 
     return results
+
+def get_input_from_rays(rays, N_samples, use_disp):
+    # Decompose the inputs
+    N_rays = rays.shape[0]
+    rays_o, rays_d = rays[:, 0:3], rays[:, 3:6]  # both (N_rays, 3)
+    near, far = rays[:, 6:7], rays[:, 7:8]  # both (N_rays, 1)
+    # Embed direction
+    # dir_embedded = embedding_dir(kwargs.get('view_dir', rays_d))
+
+    rays_o = rearrange(rays_o, 'n1 c -> n1 1 c')
+    rays_d = rearrange(rays_d, 'n1 c -> n1 1 c')
+
+    # Sample depth points
+    z_steps = torch.linspace(0, 1, N_samples, device=rays.device)
+    if not use_disp:  # use linear sampling in depth space
+        z_vals = near * (1 - z_steps) + far * z_steps
+    else:  # use linear sampling in disparity space
+        z_vals = 1 / (1 / near * (1 - z_steps) + 1 / far * z_steps)
+
+    z_vals = z_vals.expand(N_rays, N_samples)
+
+    # TODO: extend coarse and fine NeRF later
+    # if N_importance > 0:  # sample points for fine model
+    #     z_vals_mid = 0.5 * (z_vals[:, :-1] + z_vals[:, 1:])  # (N_rays, N_samples-1) interval mid points
+    #     z_vals_ = sample_pdf(z_vals_mid, results['weights_coarse'][:, 1:-1].detach(),
+    #                          N_importance, det=(perturb == 0))
+    #     # detach so that grad doesn't propogate to weights_coarse from here
+    #     z_vals = torch.sort(torch.cat([z_vals, z_vals_], -1), -1)[0]
+
+    xyz = rays_o + rays_d * rearrange(z_vals, 'n1 n2 -> n1 n2 1')
+    return xyz, rays_d, z_vals
+
+
+def get_nerflet_pred(model, embeddings, xyz, rays_d, ts):
+    a_embedded = embeddings['a'](ts)
+    if model.encode_t:
+        t_embedded = embeddings['t'](ts)
+        pred = model(xyz, rays_d, a_embedded, t_embedded)
+    else:
+        pred = model(xyz, rays_d, a_embedded, t_emb=None)
+    return pred
