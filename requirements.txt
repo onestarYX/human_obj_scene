@@ -1,5 +1,5 @@
-# torch==1.12.1
-# torchvision==0.13.1
+# torch==1.13.1
+# torchvision==0.14.1
 pytorch-lightning==1.1.5
 einops==0.3.0
 test-tube==0.7.5
@@ -16,14 +16,15 @@ torch_optimizer
 plotly==4.14.3
 
 # for mesh
-PyMCubes==0.1.2
-pycollada==0.7.1
-trimesh==3.9.1
-pyglet==1.5.10
-networkx==2.5
+PyMCubes
+pycollada
+trimesh
+pyglet
+networkx
 
 # for point cloud
-plyfile==0.7.2
-open3d==0.12.0
+plyfile
+open3d
 
 ConfigArgParse
+pyrender

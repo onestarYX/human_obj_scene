@@ -21,9 +21,6 @@ from utils import load_ckpt
 import numpy as np
 from simple_3dviz import Mesh
 from simple_3dviz.window import show
-from simple_3dviz.utils import render
-from simple_3dviz.behaviours.misc import LightToCamera
-from simple_3dviz.behaviours.io import SaveFrames
 
 
 @torch.no_grad()
@@ -127,16 +124,3 @@ if __name__ == '__main__':
     cam_target = np.squeeze(cam_rot @ init_target) + cam_pos
     light = (-60, -160, 120)
     show(m, camera_position=cam_pos, camera_target=cam_target, light=light)
-    # render(m,
-    #        behaviours=[
-    #            CameraTrajectory(
-    #                BackAndForth(Lines([-60, -160, 120], [-60, -80, 120])),
-    #                speed=0.005
-    #            )
-    #            LightToCamera(),
-    #            SaveFrames("/tmp/frame_{:03d}.png", every_n=5)
-    #        ],
-    #        n_frames=512,
-    #        camera_position=(-60., -160, 120), camera_target=(0., 0, 40),
-    #        light=(-60, -160, 120)
-    # )
