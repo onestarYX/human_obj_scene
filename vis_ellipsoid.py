@@ -116,12 +116,15 @@ if __name__ == '__main__':
     rotations = np.linalg.inv(rotations)
     translations = results['part_translations'].numpy()
     scales = results['part_scales'].numpy()
+    print(f"min: {scales.min()}, max: {scales.max()}")
     eps = np.ones((scales.shape[0], 2))
 
     m = Mesh.from_superquadrics(alpha=scales, epsilon=eps, translation=translations, rotation=rotations, colors=part_colors)
 
     cam_pos = sample['c2w'][:, 3].numpy()
-    cam_target = np.array([0, 0, 0])
+    cam_rot = sample['c2w'][:, :3].numpy()
+    init_target = np.array([1, 0, 0])[..., np.newaxis]
+    cam_target = np.squeeze(cam_rot @ init_target) + cam_pos
     light = (-60, -160, 120)
     show(m, camera_position=cam_pos, camera_target=cam_target, light=light)
     # render(m,
