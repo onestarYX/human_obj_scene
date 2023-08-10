@@ -5,6 +5,7 @@ import numpy as np
 import os
 from PIL import Image, ImageDraw
 from torchvision import transforms as T
+from pathlib import Path
 
 from .ray_utils import *
 
@@ -31,7 +32,7 @@ def add_perturbation(img, perturbation, seed):
 
 class BlenderDataset(Dataset):
     def __init__(self, root_dir, split='train', img_wh=(800, 800),
-                 perturbation=[]):
+                 perturbation=[], test_imgs=[]):
         self.root_dir = root_dir
         self.split = split
         assert img_wh[0] == img_wh[1], 'image width must equal image height!'
@@ -43,6 +44,7 @@ class BlenderDataset(Dataset):
         self.perturbation = perturbation
         if self.split == 'train':
             print(f'add {self.perturbation} perturbation!')
+        self.test_imgs = test_imgs
         self.read_meta()
         self.white_back = True
 
@@ -50,6 +52,13 @@ class BlenderDataset(Dataset):
         with open(os.path.join(self.root_dir,
                                f"transforms_{self.split.split('_')[-1]}.json"), 'r') as f:
             self.meta = json.load(f)
+
+        if self.split != 'train' and len(self.test_imgs) != 0:
+            new_frames = []
+            for frame in self.meta['frames']:
+                if Path(frame['file_path']).stem in self.test_imgs:
+                    new_frames.append(frame)
+            self.meta['frames'] = new_frames
 
         w, h = self.img_wh
         self.focal = 0.5*800/np.tan(0.5*self.meta['camera_angle_x']) # original focal length

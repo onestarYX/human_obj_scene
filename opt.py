@@ -231,6 +231,8 @@ def get_parser():
     parser.add_argument('--nerflet', default=False, action='store_true')
     parser.add_argument('--num_parts', type=int, default=16,
                         help='Number of part-NeRFs we want to use to represent the scene')
+    parser.add_argument('--test_imgs', type=str, nargs='*', default=[])
+    parser.add_argument('--out_dir', type=str, default='output')
 
     return parser
 
