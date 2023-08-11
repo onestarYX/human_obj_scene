@@ -55,7 +55,7 @@ def get_ckpt_path_dir_path_from_environment_dir(environment_dir):
 def get_parser():
     parser = configargparse.ArgumentParser()
 
-    parser.add('-c', '--config', default="configs/default.txt", is_config_file=True, help='config file path')
+    parser.add('-c', '--config', default="configs/blender.txt", is_config_file=True, help='config file path')
 
     parser.add_argument('--environment_dir', type=str, required=False, help='directory to the environment')
     parser.add_argument('--dataset_name', type=str, default='sitcom3D',

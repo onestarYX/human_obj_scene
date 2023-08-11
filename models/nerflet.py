@@ -64,7 +64,7 @@ class RayAssociator(nn.Module):
 
 class Nerflet(nn.Module):
     def __init__(self, D=8, W=256, skips=[4],
-                 N_emb_xyz=10, N_emb_dir=4, encode_t=True,
+                 N_emb_xyz=10, N_emb_dir=4, encode_a=True, encode_t=True,
                  in_channels_a=48, in_channels_t=16,
                  predict_label=True, num_classes=127, beta_min=0.03,
                  M=16, dim_latent=128, scale_min=0.05, scale_max=2):
@@ -91,6 +91,7 @@ class Nerflet(nn.Module):
         self.W = W
         self.skips = skips
 
+        self.encode_a = encode_a
         self.encode_t = encode_t
         self.in_channels_a = in_channels_a
         self.in_channels_t = in_channels_t
@@ -124,9 +125,12 @@ class Nerflet(nn.Module):
         # static output layers
         # static_occ should take xyz_encoding and the shape latent code as input;
         # static_rgb should take dir_encoding, the shape and texture latent codes, and the image-wise appearance
-        # embedding as the input
+        # embedding as the input (if encode_a is true)
         self.static_occ = nn.Sequential(nn.Linear(W + self.dim_latent, 1))
-        self.static_rgb = nn.Sequential(nn.Linear(W//2 + self.dim_latent * 2 + self.in_channels_a, 3), nn.Sigmoid())
+        if self.encode_a:
+            self.static_rgb = nn.Sequential(nn.Linear(W//2 + self.dim_latent * 2 + self.in_channels_a, 3), nn.Sigmoid())
+        else:
+            self.static_rgb = nn.Sequential(nn.Linear(W // 2 + self.dim_latent * 2, 3), nn.Sigmoid())
         # if self.predict_label:
         #     self.static_label = nn.Linear(W + self.dim_latent, num_classes)
 
@@ -273,8 +277,9 @@ class Nerflet(nn.Module):
         # Predict static rgb
         static_rgb_inputs = torch.cat((z_texture_selected, z_shape_selected), dim=-1)   # (N, 2 * dim_latent)
         static_rgb_inputs = torch.cat((static_rgb_inputs, dir_selected_encoding), dim=-1)   # (N, 2*dim_latent + W//2)
-        a_emb_ = a_emb.unsqueeze(1).expand(-1, num_pts_per_ray, -1).reshape(-1, self.in_channels_a) # (N, dim_a_emb)
-        static_rgb_inputs = torch.cat((static_rgb_inputs, a_emb_), dim=-1)
+        if self.encode_a:
+            a_emb_ = a_emb.unsqueeze(1).expand(-1, num_pts_per_ray, -1).reshape(-1, self.in_channels_a) # (N, dim_a_emb)
+            static_rgb_inputs = torch.cat((static_rgb_inputs, a_emb_), dim=-1)
         static_rgb_pred = self.static_rgb(static_rgb_inputs)
         prediction['static_rgb'] = static_rgb_pred.reshape(num_rays, num_pts_per_ray, -1)
 

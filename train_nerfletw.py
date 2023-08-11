@@ -51,17 +51,17 @@ class NerfletWSystem(LightningModule):
         self.models_to_train = []
 
         self.embeddings = {}
-        # if hparams.encode_a:
-        self.embedding_a = torch.nn.Embedding(hparams.N_vocab, hparams.N_a)
-        self.embeddings['a'] = self.embedding_a
-        self.models_to_train += [self.embedding_a]
+        if hparams.encode_a:
+            self.embedding_a = torch.nn.Embedding(hparams.N_vocab, hparams.N_a)
+            self.embeddings['a'] = self.embedding_a
+            self.models_to_train += [self.embedding_a]
         if hparams.encode_t:
             self.embedding_t = torch.nn.Embedding(hparams.N_vocab, hparams.N_tau)
             self.embeddings['t'] = self.embedding_t
             self.models_to_train += [self.embedding_t]
 
         self.nerflet = Nerflet(N_emb_xyz=hparams.N_emb_xyz, N_emb_dir=hparams.N_emb_dir,
-                               encode_t=hparams.encode_t,
+                               encode_a=hparams.encode_a, encode_t=hparams.encode_t,
                                predict_label=hparams.predict_label,
                                num_classes=hparams.num_classes,
                                M=hparams.num_parts)

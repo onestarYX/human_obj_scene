@@ -243,10 +243,11 @@ def get_input_from_rays(rays, N_samples, use_disp):
 
 
 def get_nerflet_pred(model, embeddings, xyz, rays_d, ts):
-    a_embedded = embeddings['a'](ts)
+    a_emb = None
+    t_emb = None
+    if model.encode_a:
+        a_emb = embeddings['a'](ts)
     if model.encode_t:
-        t_embedded = embeddings['t'](ts)
-        pred = model(xyz, rays_d, a_embedded, t_embedded)
-    else:
-        pred = model(xyz, rays_d, a_embedded, t_emb=None)
+        t_emb = embeddings['t'](ts)
+    pred = model(xyz, rays_d, a_emb, t_emb)
     return pred
