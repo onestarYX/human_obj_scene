@@ -299,7 +299,7 @@ def main(hparams):
                       num_sanity_val_steps=1,
                       val_check_interval=int(4000),  # run val every int(X) batches
                       benchmark=True,
-                      #   profiler="simple" if hparams.num_gpus == 1 else None
+                      accumulate_grad_batches=hparams.accumulate_grad_batches
                       )
 
     trainer.fit(system)

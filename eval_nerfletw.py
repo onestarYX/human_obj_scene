@@ -91,9 +91,10 @@ if __name__ == '__main__':
     embedding_dir = PosEmbedding(args.N_emb_dir - 1, args.N_emb_dir)
     embeddings = {'xyz': embedding_xyz, 'dir': embedding_dir}
 
-    embedding_a = torch.nn.Embedding(args.N_vocab, args.N_a).cuda()
-    load_ckpt(embedding_a, args.ckpt_path, model_name='embedding_a')
-    embeddings['a'] = embedding_a
+    if args.encode_a:
+        embedding_a = torch.nn.Embedding(args.N_vocab, args.N_a).cuda()
+        load_ckpt(embedding_a, args.ckpt_path, model_name='embedding_a')
+        embeddings['a'] = embedding_a
 
     if args.encode_t:
         embedding_t = torch.nn.Embedding(args.N_vocab, args.N_tau).cuda()
@@ -101,7 +102,7 @@ if __name__ == '__main__':
         embeddings['t'] = embedding_t
 
     nerflet = Nerflet(N_emb_xyz=args.N_emb_xyz, N_emb_dir=args.N_emb_dir,
-                      encode_t=args.encode_t, predict_label=args.predict_label,
+                      encode_a=args.encode_a, encode_t=args.encode_t, predict_label=args.predict_label,
                       num_classes=args.num_classes, M=args.num_parts).cuda()
 
     load_ckpt(nerflet, args.ckpt_path, model_name='nerflet')

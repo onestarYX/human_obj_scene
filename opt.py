@@ -233,6 +233,8 @@ def get_parser():
                         help='Number of part-NeRFs we want to use to represent the scene')
     parser.add_argument('--test_imgs', type=str, nargs='*', default=[])
     parser.add_argument('--out_dir', type=str, default='output')
+    parser.add_argument('--accumulate_grad_batches', type=int, default=1, help='accumulate gradients for this number of'
+                                                                         'batches before calling the step() for optimizer.')
 
     return parser
 
