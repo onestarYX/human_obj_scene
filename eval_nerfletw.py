@@ -137,6 +137,8 @@ if __name__ == '__main__':
             w, h = sample['img_wh']
         else:
             w, h = args.img_wh
+
+        # GT image and predicted combined image
         if args.encode_t:
             img_pred = np.clip(results['combined_rgb_map'].view(h, w, 3).cpu().numpy(), 0, 1)
         else:
@@ -186,7 +188,11 @@ if __name__ == '__main__':
         ray_associations = results['static_ray_associations'].cpu().numpy()
         ray_association_map = part_colors[ray_associations].reshape((h, w, 3))
         ray_association_map = (ray_association_map * 255).astype(np.uint8)
-        rows.append(np.concatenate([ray_association_map, np.zeros_like(ray_association_map)], axis=1))
+        obj_mask = results['static_mask'].cpu().numpy()
+        obj_mask = obj_mask[..., np.newaxis] * np.array([[1, 1, 1]])
+        obj_mask = obj_mask.reshape((h, w, 3))
+        obj_mask = (obj_mask * 255).astype(np.uint8)
+        rows.append(np.concatenate([ray_association_map, obj_mask], axis=1))
 
         res_img = np.concatenate(rows, axis=0)
         imageio.imwrite(os.path.join(dir_name, f'{i:03d}.png'), res_img)

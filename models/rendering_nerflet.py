@@ -160,8 +160,11 @@ def render_rays(models,
     static_weights = static_weights * (positive_rays[..., None])
     static_depth = torch.sum(static_weights * z_vals, dim=1)
     static_rgb_map = torch.sum(static_weights[..., None] * static_rgb, dim=1)
+    static_mask = torch.sum(static_weights, dim=1)
     results['static_depth'] = static_depth
     results['static_rgb_map'] = static_rgb_map
+    results['static_mask'] = static_mask
+
     if predict_label:
         static_labels = pred['static_label']
         results['static_label'] = static_labels  # TODO: Think about if it makes sense to add this with transient_part_labels below.

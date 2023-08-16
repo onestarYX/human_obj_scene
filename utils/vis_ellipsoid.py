@@ -86,7 +86,7 @@ if __name__ == '__main__':
         embeddings['t'] = embedding_t
 
     nerflet = Nerflet(N_emb_xyz=args.N_emb_xyz, N_emb_dir=args.N_emb_dir,
-                      encode_t=args.encode_t, predict_label=args.predict_label,
+                      encode_a=args.encode_a, encode_t=args.encode_t, predict_label=args.predict_label,
                       num_classes=args.num_classes, M=args.num_parts).cuda()
 
     load_ckpt(nerflet, args.ckpt_path, model_name='nerflet')

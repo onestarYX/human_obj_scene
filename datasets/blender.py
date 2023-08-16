@@ -82,6 +82,7 @@ class BlenderDataset(Dataset):
         if self.split == 'train': # create buffer of all rays and rgb data
             self.all_rays = []
             self.all_rgbs = []
+            self.all_masks = []
             for t, frame in enumerate(self.meta['frames']):
                 pose = np.array(frame['transform_matrix'])[:3, :4]
                 c2w = torch.FloatTensor(pose)
@@ -94,6 +95,8 @@ class BlenderDataset(Dataset):
 
                 img = img.resize(self.img_wh, Image.LANCZOS)
                 img = self.transform(img) # (4, h, w)
+                ray_mask = (img[-1] > 0).flatten()  # (H*W) valid color area
+                self.all_masks.append(ray_mask)
                 img = img.view(4, -1).permute(1, 0) # (h*w, 4) RGBA
                 img = img[:, :3]*img[:, -1:] + (1-img[:, -1:]) # blend A to RGB
                 self.all_rgbs += [img]
@@ -109,6 +112,7 @@ class BlenderDataset(Dataset):
 
             self.all_rays = torch.cat(self.all_rays, 0) # (len(self.meta['frames])*h*w, 3)
             self.all_rgbs = torch.cat(self.all_rgbs, 0) # (len(self.meta['frames])*h*w, 3)
+            self.all_masks = torch.cat(self.all_masks, 0).to(torch.int)
 
     def define_transforms(self):
         self.transform = T.ToTensor()
@@ -127,7 +131,7 @@ class BlenderDataset(Dataset):
                       'ts': self.all_rays[idx, 8].long(),
                       'rgbs': self.all_rgbs[idx],
                       'labels': 0,
-                      'ray_mask': torch.ones_like(self.all_rays[idx, 0], dtype=torch.int)}
+                      'ray_mask': self.all_masks[idx]}
 
         else: # create data for each image separately
             frame = self.meta['frames'][idx]
@@ -157,7 +161,7 @@ class BlenderDataset(Dataset):
                       'c2w': c2w,
                       'valid_mask': valid_mask,
                       'labels': 0,
-                      'ray_mask': torch.ones_like(rays[:, 0], dtype=torch.int)
+                      'ray_mask': valid_mask.to(torch.int)
                       }
 
             # if self.split == 'test_train' and self.perturbation:
