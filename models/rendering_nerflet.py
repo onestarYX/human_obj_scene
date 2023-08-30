@@ -161,6 +161,8 @@ def render_rays(models,
     static_depth = torch.sum(static_weights * z_vals, dim=1)
     static_rgb_map = torch.sum(static_weights[..., None] * static_rgb, dim=1)
     static_mask = torch.sum(static_weights, dim=1)
+    if white_back:
+        static_rgb_map += 1 - static_mask.unsqueeze(-1)
     results['static_depth'] = static_depth
     results['static_rgb_map'] = static_rgb_map
     results['static_mask'] = static_mask
@@ -180,6 +182,9 @@ def render_rays(models,
         static_part_weights = static_occ * transmittance
         static_part_weights = static_part_weights * (positive_rays[..., None])
         static_part_rgb_map = torch.sum(static_part_weights[..., None] * static_rgb, dim=1)
+        # TODO: This is not correct. Should be the "combined" weights sum. How do we define the "combined" weights
+        if white_back:
+            static_part_rgb_map += 1 - torch.sum(static_part_weights, dim=1).unsqueeze(-1)
         # This is the "part" weights for transient contents
         transient_part_weights = transient_occ * transmittance
         transient_part_rgb_map = torch.sum(transient_part_weights[..., None] * transient_rgb, dim=1)
