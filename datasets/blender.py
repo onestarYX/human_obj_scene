@@ -83,6 +83,9 @@ class BlenderDataset(Dataset):
             self.all_rays = []
             self.all_rgbs = []
             self.all_masks = []
+            # Why are we using different t for static scenes?
+            # A: because we might be perturbing the static scene. If we don't perturb, then
+            # we should disable encode_t so t here doesn't really matter.
             for t, frame in enumerate(self.meta['frames']):
                 pose = np.array(frame['transform_matrix'])[:3, :4]
                 c2w = torch.FloatTensor(pose)

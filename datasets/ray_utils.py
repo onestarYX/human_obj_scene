@@ -10,6 +10,33 @@ def HW_from_K(K):
     return H, W
 
 
+def get_ray_directions_replica(H, W, K, convention='opencv'):
+    fx, fy, cx, cy = K[0, 0], K[1, 1], K[0, 2], K[1, 2]
+    i, j = torch.meshgrid(torch.arange(W), torch.arange(H))  # pytorch's meshgrid has indexing='ij', we transpose to "xy" moode
+
+    i = i.t().float()
+    j = j.t().float()
+
+    size = [H, W]
+
+    if convention == "opencv":
+        x = (i - cx) / fx
+        y = (j - cy) / fy
+        z = torch.ones(size)
+    elif convention == "opengl":
+        x = (i - cx) / fx
+        y = -(j - cy) / fy
+        z = -torch.ones(size)
+    else:
+        assert False
+
+    dirs = torch.stack((x, y, z), dim=-1)  # shape of [H, W, 3]
+
+    norm = torch.norm(dirs, dim=-1, keepdim=True)
+    dirs = dirs * (1. / norm)
+
+    return dirs
+
 def get_ray_directions(H, W, K):
     """
     Get ray directions for all pixels in camera coordinate.

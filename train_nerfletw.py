@@ -4,11 +4,8 @@ import torch
 from collections import defaultdict
 from torch.utils.data import DataLoader
 import torch.nn as nn
-from tqdm import tqdm
 import datetime
-import cv2
 import numpy as np
-from typing import Optional
 # pytorch-lightning
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning import LightningModule, Trainer
@@ -17,11 +14,11 @@ from einops import repeat
 
 from datasets.sitcom3D import Sitcom3DDataset
 from datasets.blender import BlenderDataset
-from datasets.ray_utils import get_ray_directions, get_rays, get_rays_batch_version
+from datasets.replica import ReplicaDataset
+from datasets.ray_utils import get_rays_batch_version
 
 # models
 from models.nerflet import Nerflet
-# from models.rendering import render_rays
 from models.rendering_nerflet import render_rays
 from models.pose import LearnFocal, LearnPose
 
@@ -106,6 +103,11 @@ class NerfletWSystem(LightningModule):
                                                 img_wh=self.hparams.img_wh, split='train')
             self.val_dataset = BlenderDataset(root_dir=self.hparams.environment_dir,
                                               img_wh=self.hparams.img_wh, split='val')
+        elif self.hparams.dataset_name == 'replica':
+            self.train_dataset = ReplicaDataset(root_dir=self.hparams.environment_dir,
+                                                img_downscale=self.hparams.img_downscale, split='train')
+            self.val_dataset = ReplicaDataset(root_dir=self.hparams.environment_dir,
+                                              img_downscale=self.hparams.img_downscale, split='val')
 
     def load_from_ckpt_path(self, ckpt_path):
         """TODO(ethan): move this elsewhere
