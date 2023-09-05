@@ -17,6 +17,7 @@ from models.model_utils import quaternions_to_rotation_matrices
 
 from datasets.sitcom3D import Sitcom3DDataset
 from datasets.blender import BlenderDataset
+from datasets.replica import ReplicaDataset
 from utils import load_ckpt
 import numpy as np
 from simple_3dviz import Mesh
@@ -95,6 +96,9 @@ if __name__ == '__main__':
         kwargs = {}
         dataset = BlenderDataset(root_dir=config.environment_dir,
                                  img_wh=config.img_wh, split='test_train')
+    elif config.dataset_name == 'replica':
+        dataset = ReplicaDataset(root_dir=config.environment_dir,
+                                 img_downscale=config.img_downscale, split='test_train')
 
     embedding_xyz = PosEmbedding(config.N_emb_xyz - 1, config.N_emb_xyz)
     embedding_dir = PosEmbedding(config.N_emb_dir - 1, config.N_emb_dir)

@@ -19,6 +19,7 @@ from models.rendering_nerflet import (
 
 from datasets.sitcom3D import Sitcom3DDataset
 from datasets.blender import BlenderDataset
+from datasets.replica import ReplicaDataset
 import numpy as np
 
 from metrics import psnr
@@ -75,17 +76,21 @@ def compute_iou(pred, gt, num_cls):
 
 if __name__ == '__main__':
     args = get_opts()
+    kwargs = {}
     if args.dataset_name == 'sitcom3D':
-        kwargs = {'environment_dir': args.environment_dir,
-                  'near_far_version': args.near_far_version}
+        kwargs.update({'environment_dir': args.environment_dir,
+                      'near_far_version': args.near_far_version})
         # kwargs['img_downscale'] = args.img_downscale
         kwargs['val_num'] = 5
         kwargs['use_cache'] = args.use_cache
         dataset = Sitcom3DDataset(split='test_train', img_downscale=args.img_downscale_val, **kwargs)
     elif args.dataset_name == 'blender':
-        kwargs = {}
+
         dataset = BlenderDataset(root_dir=args.environment_dir,
                                  img_wh=args.img_wh, split='test_train')
+    elif args.dataset_name == 'replica':
+        dataset = ReplicaDataset(root_dir=args.environment_dir,
+                                 img_downscale=args.img_downscale, split='val')
 
     embedding_xyz = PosEmbedding(args.N_emb_xyz - 1, args.N_emb_xyz)
     embedding_dir = PosEmbedding(args.N_emb_dir - 1, args.N_emb_dir)
@@ -135,8 +140,10 @@ if __name__ == '__main__':
         # GT image and predicted image
         if args.dataset_name == 'sitcom3D':
             w, h = sample['img_wh']
-        else:
+        elif args.dataset_name == 'blender':
             w, h = args.img_wh
+        elif args.dataset_name == 'replica':
+            w, h = dataset.img_wh
 
         # GT image and predicted combined image
         if args.encode_t:

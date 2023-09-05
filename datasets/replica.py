@@ -25,7 +25,11 @@ class ReplicaDataset(Dataset):
         self.white_back = True
 
     def read_meta(self):
-        self.data_dir = self.root_dir / self.split
+        if self.split == 'test_train':
+            split_dir = 'train'
+        else:
+            split_dir = self.split
+        self.data_dir = self.root_dir / split_dir
         self.img_dir = self.data_dir / 'rgb'
         self.img_list = []
         for img_path in self.img_dir.iterdir():
@@ -86,9 +90,9 @@ class ReplicaDataset(Dataset):
         if self.split == 'train':
             return len(self.all_rays)
         if self.split == 'val':
-            return 1 # only validate 8 images (to support <=8 gpus)
+            return len(self.img_list) # only validate 8 images (to support <=8 gpus)
         if self.split == 'test_train':
-            return len(self.meta['frames'])
+            return len(self.img_list)
 
     def __getitem__(self, idx):
         if self.split == 'train': # use data in the buffers
