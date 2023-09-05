@@ -21,7 +21,11 @@ from utils import load_ckpt
 import numpy as np
 from simple_3dviz import Mesh
 from simple_3dviz.window import show
-
+import argparse
+import csv
+import json
+from omegaconf import OmegaConf
+from pathlib import Path
 
 @torch.no_grad()
 def estimate_ellipsoid(model, embeddings, rays, ts, N_samples, use_disp, chunk):
@@ -59,56 +63,70 @@ def compute_iou(pred, gt, num_cls):
 
 
 if __name__ == '__main__':
-    args = get_opts()
-    if args.dataset_name == 'sitcom3D':
-        kwargs = {'environment_dir': args.environment_dir,
-                  'near_far_version': args.near_far_version}
+    parser = argparse.ArgumentParser()
+    parser.add_argument('ckpt_path', type=str)
+    parser.add_argument('--output_dir', type=str, default='results/ellipsoids')
+    parser.add_argument('--use_ckpt', type=str)
+    args = parser.parse_args()
+
+    ckpt_dir = Path(args.ckpt_path)
+    config = dict()
+    if (ckpt_dir / 'meta_tags.csv').exists():
+        config_path = ckpt_dir / 'meta_tags.csv'
+        with open(config_path, newline='') as csvfile:
+            csv_reader = csv.DictReader(csvfile)
+            for row in csv_reader:
+                dict[row['key']] = row['value']
+    else:
+        config_path = ckpt_dir / 'config.json'
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+
+    config = OmegaConf.create(config)
+
+    if config.dataset_name == 'sitcom3D':
+        kwargs = {'environment_dir': config.environment_dir,
+                  'near_far_version': config.near_far_version}
         # kwargs['img_downscale'] = args.img_downscale
         kwargs['val_num'] = 5
-        kwargs['use_cache'] = args.use_cache
-        dataset = Sitcom3DDataset(split='test_train', img_downscale=args.img_downscale_val, **kwargs)
-    elif args.dataset_name == 'blender':
+        kwargs['use_cache'] = config.use_cache
+        dataset = Sitcom3DDataset(split='test_train', img_downscale=config.img_downscale_val, **kwargs)
+    elif config.dataset_name == 'blender':
         kwargs = {}
-        dataset = BlenderDataset(root_dir=args.environment_dir,
-                                 img_wh=args.img_wh, split='test_train')
+        dataset = BlenderDataset(root_dir=config.environment_dir,
+                                 img_wh=config.img_wh, split='test_train')
 
-    embedding_xyz = PosEmbedding(args.N_emb_xyz - 1, args.N_emb_xyz)
-    embedding_dir = PosEmbedding(args.N_emb_dir - 1, args.N_emb_dir)
+    embedding_xyz = PosEmbedding(config.N_emb_xyz - 1, config.N_emb_xyz)
+    embedding_dir = PosEmbedding(config.N_emb_dir - 1, config.N_emb_dir)
     embeddings = {'xyz': embedding_xyz, 'dir': embedding_dir}
 
-    embedding_a = torch.nn.Embedding(args.N_vocab, args.N_a).cuda()
-    load_ckpt(embedding_a, args.ckpt_path, model_name='embedding_a')
-    embeddings['a'] = embedding_a
+    if config.encode_a:
+        embedding_a = torch.nn.Embedding(config.N_vocab, config.N_a).cuda()
+        load_ckpt(embedding_a, config.ckpt_path, model_name='embedding_a')
+        embeddings['a'] = embedding_a
 
-    if args.encode_t:
-        embedding_t = torch.nn.Embedding(args.N_vocab, args.N_tau).cuda()
-        load_ckpt(embedding_t, args.ckpt_path, model_name='embedding_t')
+    if config.encode_t:
+        embedding_t = torch.nn.Embedding(config.N_vocab, config.N_tau).cuda()
+        load_ckpt(embedding_t, config.ckpt_path, model_name='embedding_t')
         embeddings['t'] = embedding_t
 
-    nerflet = Nerflet(N_emb_xyz=args.N_emb_xyz, N_emb_dir=args.N_emb_dir,
-                      encode_a=args.encode_a, encode_t=args.encode_t, predict_label=args.predict_label,
-                      num_classes=args.num_classes, M=args.num_parts).cuda()
+    nerflet = Nerflet(N_emb_xyz=config.N_emb_xyz, N_emb_dir=config.N_emb_dir,
+                      encode_a=config.encode_a, encode_t=config.encode_t, predict_label=config.predict_label,
+                      num_classes=config.num_classes, M=config.num_parts).cuda()
 
-    load_ckpt(nerflet, args.ckpt_path, model_name='nerflet')
+    load_ckpt(nerflet, config.ckpt_path, model_name='nerflet')
 
-    imgs, psnrs = [], []
-    run_name = args.ckpt_path.split("/")[-4]
-    dir_name = f'{args.environment_dir}/rendering/{run_name}'
-    os.makedirs(dir_name, exist_ok=True)
 
-    label_colors = np.random.rand(args.num_classes, 3)
+    label_colors = np.random.rand(config.num_classes, 3)
     part_colors = np.random.rand(16, 3)
-
-    iou_combined = []
-    iou_static = []
 
     sample = dataset[0]
     rays = sample['rays']
     ts = sample['ts']
     results = estimate_ellipsoid(nerflet, embeddings, rays.cuda(), ts.cuda(),
-                                 args.N_samples, args.use_disp, args.chunk)
+                                 config.N_samples, config.use_disp, config.chunk)
 
-    part_colors = np.random.rand(args.num_parts, 3)
+    part_colors = np.random.rand(config.num_parts, 3)
     rotations = quaternions_to_rotation_matrices(results['part_rotations']).numpy()
     rotations = np.linalg.inv(rotations)
     translations = results['part_translations'].numpy()
