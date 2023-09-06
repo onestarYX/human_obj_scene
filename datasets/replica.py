@@ -9,20 +9,21 @@ from pathlib import Path
 import argparse
 import random
 import shutil
-
+import json
 from datasets.ray_utils import *
 
 
 class ReplicaDataset(Dataset):
-    def __init__(self, root_dir, split='train', img_downscale=1, test_imgs=[]):
+    def __init__(self, root_dir, split='train', img_downscale=1, test_imgs=[], things_only=False):
         self.root_dir = Path(root_dir)
         self.split = split
         self.img_wh = (640, 480)
         self.img_downscale = img_downscale
         self.define_transforms()
         self.test_imgs = test_imgs
-        self.read_meta()
         self.white_back = True
+        self.things_only = things_only
+        self.read_meta()
 
     def read_meta(self):
         if self.split == 'test_train':
@@ -30,12 +31,20 @@ class ReplicaDataset(Dataset):
         else:
             split_dir = self.split
         self.data_dir = self.root_dir / split_dir
-        self.img_dir = self.data_dir / 'rgb'
+        if self.things_only:
+            self.img_dir = self.data_dir / 'rgb_objects'
+            self.label_dir = self.data_dir / 'label_objects'
+        else:
+            self.img_dir = self.data_dir / 'rgb'
+            self.label_dir = self.data_dir / 'label'
         self.img_list = []
         for img_path in self.img_dir.iterdir():
             self.img_list.append(img_path)
 
         self.c2w_list = np.load(self.root_dir / 'cam.npy')
+        # label_info_path = self.root_dir / 'info_semantic.json'
+        # with open(label_info_path, 'r') as f:
+        #     self.label_info = json.load(f)
 
         w, h = self.img_wh
         self.hfov = 90
@@ -65,10 +74,17 @@ class ReplicaDataset(Dataset):
                 img = Image.open(img_path)
                 img = img.resize(self.img_wh, Image.LANCZOS)
                 img = self.transform(img) # (3, h, w)
-                ray_mask = torch.ones(img.shape[1:], dtype=torch.int).flatten()  # (H*W) valid color area
-                self.all_masks.append(ray_mask)
                 img = img.view(3, -1).permute(1, 0) # (h*w, 3) RGB
                 self.all_rgbs += [img]
+
+                # labels
+                label_map_path = self.label_dir / f"semantic_class_{t}.png"
+                label_map = Image.open(label_map_path)
+                label_map = label_map.resize(self.img_wh, Image.LANCZOS)
+                label_map = np.array(label_map)
+                ray_mask = torch.tensor(label_map != 0, dtype=torch.int).flatten()
+                # ray_mask = torch.ones(img.shape[1:], dtype=torch.int).flatten()  # (H*W) valid color area
+                self.all_masks.append(ray_mask)
                 
                 rays_o, rays_d = get_rays(self.directions, c2w) # both (h*w, 3)
                 rays_t = t * torch.ones(len(rays_o), 1)
@@ -110,14 +126,18 @@ class ReplicaDataset(Dataset):
             img = Image.open(img_path)
             img = img.resize(self.img_wh, Image.LANCZOS)
             img = self.transform(img) # (3, H, W)
-            ray_mask = torch.ones(img.shape[1:], dtype=torch.int).flatten() # (H*W) valid color area
             img = img.view(3, -1).permute(1, 0) # (H*W, 3) RGB
             rays_o, rays_d = get_rays(self.directions, c2w)
-
             rays = torch.cat([rays_o, rays_d, 
                               self.near*torch.ones_like(rays_o[:, :1]),
                               self.far*torch.ones_like(rays_o[:, :1])],
                               1) # (H*W, 8)
+
+            label_map_path = self.label_dir / f"semantic_class_{idx}.png"
+            label_map = Image.open(label_map_path)
+            label_map = label_map.resize(self.img_wh, Image.LANCZOS)
+            label_map = np.array(label_map)
+            ray_mask = torch.tensor(label_map != 0, dtype=torch.int).flatten()
 
             t = 0
             sample = {'rays': rays,
@@ -125,7 +145,7 @@ class ReplicaDataset(Dataset):
                       'rgbs': img,
                       'c2w': c2w,
                       'labels': 0,
-                      'ray_mask': ray_mask.to(torch.int)
+                      'ray_mask': ray_mask
                       }
 
         return sample

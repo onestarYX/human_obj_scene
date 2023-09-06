@@ -102,9 +102,11 @@ class NerfletWSystem(LightningModule):
                                               img_wh=self.hparams.img_wh, split='val')
         elif self.hparams.dataset_name == 'replica':
             self.train_dataset = ReplicaDataset(root_dir=self.hparams.environment_dir,
-                                                img_downscale=self.hparams.img_downscale, split='train')
+                                                img_downscale=self.hparams.img_downscale, split='train',
+                                                things_only=self.hparams.things_only)
             self.val_dataset = ReplicaDataset(root_dir=self.hparams.environment_dir,
-                                              img_downscale=self.hparams.img_downscale, split='val')
+                                              img_downscale=self.hparams.img_downscale, split='val',
+                                              things_only=self.hparams.things_only)
 
     def load_from_ckpt_path(self, ckpt_path):
         """TODO(ethan): move this elsewhere
