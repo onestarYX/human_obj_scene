@@ -3,14 +3,11 @@ from opt import get_opts
 import torch
 from collections import defaultdict
 from torch.utils.data import DataLoader
-import torch.nn as nn
 import datetime
-import numpy as np
 # pytorch-lightning
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning import LightningModule, Trainer
 from pytorch_lightning.loggers import TestTubeLogger
-from einops import repeat
 
 from datasets.sitcom3D import Sitcom3DDataset
 from datasets.blender import BlenderDataset
@@ -35,7 +32,7 @@ from losses import loss_dict
 from metrics import psnr
 
 from utils import load_ckpt
-
+import json
 
 class NerfletWSystem(LightningModule):
     def __init__(self, hparams, eval_only=False):
@@ -267,7 +264,6 @@ def main(hparams):
     # print(hparams.exp_name)
 
     # following pytorch lightning convention here
-
     logger = TestTubeLogger(save_dir=save_dir,
                             name=timedatestring,
                             debug=False,
@@ -282,6 +278,12 @@ def main(hparams):
 
     # following pytorch lightning convention here
     dir_path = os.path.join(save_dir, timedatestring, f"version_{version}")
+    config = vars(hparams)
+    config_save_path = os.path.join(dir_path, 'config.json')
+    json_obj = json.dumps(config, indent=2)
+    with open(config_save_path, 'w') as f:
+        f.write(json_obj)
+
     system = NerfletWSystem(hparams)
 
     checkpoint_filepath = os.path.join(f'{dir_path}/ckpts')
