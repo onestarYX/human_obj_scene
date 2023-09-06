@@ -52,9 +52,14 @@ class RayAssociator(nn.Module):
         super().__init__()
         self.occ_threshold = occ_threshold
 
-    def forward(self, occ):
+    def forward(self, occ, select_part_idx=None):
         # occ: (num_rays, num_pts_per_ray, M)
-        max_occ_per_pt, part_idx_per_pt = occ.max(dim=-1)   # (num_rays, num_pts_per_ray)
+        if select_part_idx is not None:
+            max_occ_per_pt = occ[:, :, select_part_idx]
+            part_idx_per_pt = torch.ones_like(occ[:, :, 0]) * select_part_idx
+            part_idx_per_pt = part_idx_per_pt.to(torch.int64)
+        else:
+            max_occ_per_pt, part_idx_per_pt = occ.max(dim=-1)   # (num_rays, num_pts_per_ray)
         points_in = max_occ_per_pt >= self.occ_threshold
         positive_rays, positive_pt_idx = points_in.max(dim=-1)  # (num_rays,)
         ray_associations = torch.gather(part_idx_per_pt, dim=-1, index=positive_pt_idx[..., None])
@@ -164,7 +169,7 @@ class Nerflet(nn.Module):
         self.ray_associator = RayAssociator()
 
 
-    def forward(self, pts, dir, a_emb, t_emb):
+    def forward(self, pts, dir, a_emb, t_emb, select_part_idx):
         """
         Encodes input (xyz+dir) to rgb+sigma (not ready to render yet).
         For rendering this ray, please see rendering.py
@@ -252,7 +257,7 @@ class Nerflet(nn.Module):
 
         '''Get ray association'''
         positive_rays, ray_associations = self.ray_associator(
-            static_occ.reshape(num_rays, num_pts_per_ray, self.M))
+            static_occ.reshape(num_rays, num_pts_per_ray, self.M), select_part_idx)
         prediction['static_positive_rays'] = positive_rays
         prediction['static_ray_associations'] = ray_associations
 
