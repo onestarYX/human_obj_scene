@@ -236,6 +236,7 @@ def get_parser():
     parser.add_argument('--accumulate_grad_batches', type=int, default=1, help='accumulate gradients for this number of'
                                                                          'batches before calling the step() for optimizer.')
     parser.add_argument('--things_only', action='store_true', default=False)
+    parser.add_argument('--loss_pos_ray_ratio', type=float, default=1)
 
     return parser
 

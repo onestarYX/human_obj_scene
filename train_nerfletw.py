@@ -195,7 +195,8 @@ class NerfletWSystem(LightningModule):
         rays, ray_mask = self.rays_from_batch(batch)
         rgbs, ts, gt_labels = batch['rgbs'], batch['ts'], batch['labels']
         results = self.forward(rays, ts, version="train")
-        loss_d = self.loss(results, rgbs, gt_labels, ray_mask, self.hparams.encode_t, self.hparams.predict_label)
+        loss_d = self.loss(results, rgbs, gt_labels, ray_mask,
+                           self.hparams.encode_t, self.hparams.predict_label, self.hparams.loss_pos_ray_ratio)
         loss = sum(l for l in loss_d.values())
 
         with torch.no_grad():

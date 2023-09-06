@@ -77,7 +77,20 @@ class NerfletWLoss(nn.Module):
         self.coef = coef
         self.lambda_u = lambda_u
 
-    def forward(self, pred, gt_rgbs, gt_labels, ray_mask, encode_t=True, predict_label=True):
+    def forward(self, pred, gt_rgbs, gt_labels, ray_mask, encode_t=True, predict_label=True, loss_pos_ray_ratio=1):
+        if loss_pos_ray_ratio != 1:
+            assert 0 < loss_pos_ray_ratio <= 1
+            original_ones_count = ray_mask.sum()
+            zeros_to_flip_count = int(original_ones_count / loss_pos_ray_ratio - original_ones_count)
+            zero_indices = torch.nonzero(ray_mask == 0).squeeze()
+            if zeros_to_flip_count > len(zero_indices):
+                zeros_to_flip_count = len(zero_indices)
+            # rand_selected_zero_indices = torch.randint(low=0, high=len(zero_indices), size=(zeros_to_flip_count,)).to(ray_mask.device)
+            # rand_selected_zero_indices = zero_indices[rand_selected_zero_indices]
+            rand_selected_zero_indices = torch.randperm(len(zero_indices))[:zeros_to_flip_count]
+            rand_selected_zero_indices = zero_indices[rand_selected_zero_indices]
+            ray_mask[rand_selected_zero_indices] = 1
+
         ray_mask_sum = ray_mask.sum() + 1e-20
         ret = {}
         if encode_t:
