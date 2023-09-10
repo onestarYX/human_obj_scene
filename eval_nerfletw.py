@@ -162,11 +162,12 @@ def render_to_path(path, select_part_idx=None):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('exp_dir', type=str)
+    parser.add_argument('--exp_dir', type=str)
     parser.add_argument('--output_dir', type=str, default='results/rendering')
     parser.add_argument('--use_ckpt', type=str)
     parser.add_argument('--select_part_idx', type=int)
     parser.add_argument('--sweep_parts', action='store_true', default=False)
+    parser.add_argument("opts", nargs=argparse.REMAINDER)
     args = parser.parse_args()
 
     exp_dir = Path(args.exp_dir)
@@ -175,8 +176,10 @@ if __name__ == '__main__':
 
     config_path = exp_dir / 'config.json'
     with open(config_path, 'r') as f:
-        config = json.load(f)
-    config = OmegaConf.create(config)
+        file_config = json.load(f)
+    file_config = OmegaConf.create(file_config)
+    cli_config = OmegaConf.from_dotlist(args.opts)
+    config = OmegaConf.merge(file_config, cli_config)
 
     kwargs = {}
     if config.dataset_name == 'sitcom3D':
@@ -191,7 +194,8 @@ if __name__ == '__main__':
                                  img_wh=config.img_wh, split='test_train')
     elif config.dataset_name == 'replica':
         dataset = ReplicaDataset(root_dir=config.environment_dir,
-                                 img_downscale=config.img_downscale, split='val')
+                                 img_downscale=config.img_downscale, split='val',
+                                 things_only=config.things_only)
 
     embedding_xyz = PosEmbedding(config.N_emb_xyz - 1, config.N_emb_xyz)
     embedding_dir = PosEmbedding(config.N_emb_dir - 1, config.N_emb_dir)
