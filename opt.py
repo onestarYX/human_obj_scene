@@ -244,8 +244,8 @@ def get_parser():
 def get_opts():
     parser = get_parser()
     args = parser.parse_args()
-    if args.environment_dir:
-        args.environment_dir = get_absolute_path(args.environment_dir)
+    # if args.environment_dir:
+    #     args.environment_dir = get_absolute_path(args.environment_dir)
     if args.gpus:  # set gpus if specified
         gpus = select_gpus(args.gpus)
         args.num_gpus = len(gpus)
@@ -262,8 +262,8 @@ def get_opts_from_args_str(args_str):
     parser = get_parser()
     args = args_str.split(" ")
     args = parser.parse_args(args)
-    if args.environment_dir:
-        args.environment_dir = get_absolute_path(args.environment_dir)
+    # if args.environment_dir:
+    #     args.environment_dir = get_absolute_path(args.environment_dir)
     if args.gpus:  # set gpus if specified
         gpus = select_gpus(args.gpus)
         args.num_gpus = len(gpus)

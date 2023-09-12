@@ -170,6 +170,7 @@ if __name__ == '__main__':
     parser.add_argument('--sweep_parts', action='store_true', default=False)
     parser.add_argument('--num_parts', type=int, default=-1)
     parser.add_argument('--num_images', type=int, default=-1)
+    parser.add_argument('--split', type=str, default='val')
     parser.add_argument("opts", nargs=argparse.REMAINDER)
     args = parser.parse_args()
 
@@ -197,7 +198,7 @@ if __name__ == '__main__':
                                  img_wh=config.img_wh, split='test_train')
     elif config.dataset_name == 'replica':
         dataset = ReplicaDataset(root_dir=config.environment_dir,
-                                 img_downscale=config.img_downscale, split='val',
+                                 img_downscale=config.img_downscale, split=args.split,
                                  things_only=config.things_only if 'things_only' in config else False)
 
     embedding_xyz = PosEmbedding(config.N_emb_xyz - 1, config.N_emb_xyz)
