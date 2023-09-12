@@ -38,7 +38,7 @@ from omegaconf import OmegaConf
 @torch.no_grad()
 def batched_inference(models, embeddings,
                       rays, ts, predict_label, num_classes, N_samples, N_importance, use_disp,
-                      chunk, white_back, select_part_idx, **kwargs):
+                      chunk, white_back, **kwargs):
     """Do batched inference on rays using chunk."""
     B = rays.shape[0]
     results = defaultdict(list)
@@ -56,7 +56,6 @@ def batched_inference(models, embeddings,
                         chunk,
                         white_back,
                         test_time=True,
-                        select_part_idx=select_part_idx,
                         **kwargs)
 
         for k, v in rendered_ray_chunks.items():
@@ -87,8 +86,7 @@ def render_to_path(path, select_part_idx=None):
     results = batched_inference(models, embeddings, rays.cuda(), ts.cuda(),
                                 config.predict_label, config.num_classes,
                                 config.N_samples, config.N_importance, config.use_disp,
-                                config.chunk, dataset.white_back, select_part_idx=None,
-                                **kwargs)
+                                config.chunk, dataset.white_back, **kwargs)
 
     rows = []
 

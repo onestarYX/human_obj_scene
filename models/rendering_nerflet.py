@@ -111,7 +111,6 @@ def render_rays(models,
                 chunk=1024 * 32,
                 white_back=False,
                 test_time=False,
-                select_part_idx=None,
                 **kwargs
                 ):
     """
@@ -136,7 +135,7 @@ def render_rays(models,
     # Decompose the inputs
     xyz, rays_d, z_vals = get_input_from_rays(rays, N_samples, use_disp)
     model = models['nerflet']
-    pred = get_nerflet_pred(model, embeddings, xyz, rays_d, ts, select_part_idx)
+    pred = get_nerflet_pred(model, embeddings, xyz, rays_d, ts)
 
     '''Rendering. We want:
         static: occ, rgb, labels, depth
@@ -251,12 +250,12 @@ def get_input_from_rays(rays, N_samples, use_disp):
     return xyz, rays_d, z_vals
 
 
-def get_nerflet_pred(model, embeddings, xyz, rays_d, ts, select_part_idx=None):
+def get_nerflet_pred(model, embeddings, xyz, rays_d, ts):
     a_emb = None
     t_emb = None
     if model.encode_a:
         a_emb = embeddings['a'](ts)
     if model.encode_t:
         t_emb = embeddings['t'](ts)
-    pred = model(xyz, rays_d, a_emb, t_emb, select_part_idx)
+    pred = model(xyz, rays_d, a_emb, t_emb)
     return pred
