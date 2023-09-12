@@ -135,6 +135,8 @@ def render_rays(models,
     # Decompose the inputs
     xyz, rays_d, z_vals = get_input_from_rays(rays, N_samples, use_disp)
     model = models['nerflet']
+    # if test_time:
+    #     model.eval()
     pred = get_nerflet_pred(model, embeddings, xyz, rays_d, ts)
 
     '''Rendering. We want:

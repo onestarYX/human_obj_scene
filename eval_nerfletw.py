@@ -192,10 +192,10 @@ if __name__ == '__main__':
         # kwargs['img_downscale'] = config.img_downscale
         kwargs['val_num'] = 5
         kwargs['use_cache'] = config.use_cache
-        dataset = Sitcom3DDataset(split='test_train', img_downscale=config.img_downscale_val, **kwargs)
+        dataset = Sitcom3DDataset(split=args.split, img_downscale=config.img_downscale_val, **kwargs)
     elif config.dataset_name == 'blender':
         dataset = BlenderDataset(root_dir=config.environment_dir,
-                                 img_wh=config.img_wh, split='test_train')
+                                 img_wh=config.img_wh, split=args.split)
     elif config.dataset_name == 'replica':
         dataset = ReplicaDataset(root_dir=config.environment_dir,
                                  img_downscale=config.img_downscale, split=args.split,
@@ -221,7 +221,7 @@ if __name__ == '__main__':
 
     psnrs = []
     label_colors = np.random.rand(config.num_classes, 3)
-    part_colors = np.random.rand(16, 3)
+    part_colors = np.random.rand(config.num_parts, 3)
     iou_combined = []
     iou_static = []
 
@@ -233,9 +233,9 @@ if __name__ == '__main__':
                 if args.num_parts != -1 and j >= args.num_parts:
                     continue
                 print(f"Rendering part {j}")
-                path = output_dir / f"part_{j}"
+                path = output_dir / f"frame_{i:03d}"
                 path.mkdir(exist_ok=True)
-                path = path / f"{i:03d}.png"
+                path = path / f"part_{j}.png"
                 render_to_path(path, j)
         elif args.select_part_idx is not None:
             path = output_dir / f"{i:03d}"
