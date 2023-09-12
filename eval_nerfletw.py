@@ -87,7 +87,7 @@ def render_to_path(path, select_part_idx=None):
     results = batched_inference(models, embeddings, rays.cuda(), ts.cuda(),
                                 config.predict_label, config.num_classes,
                                 config.N_samples, config.N_importance, config.use_disp,
-                                config.chunk, dataset.white_back, select_part_idx,
+                                config.chunk, dataset.white_back, select_part_idx=None,
                                 **kwargs)
 
     rows = []
@@ -101,11 +101,15 @@ def render_to_path(path, select_part_idx=None):
         w, h = dataset.img_wh
 
     # GT image and predicted combined image
+    ray_associations = results['static_ray_associations'].cpu().numpy().reshape((h, w))
     if config.encode_t:
         img_pred = np.clip(results['combined_rgb_map'].view(h, w, 3).cpu().numpy(), 0, 1)
     else:
         img_pred = np.clip(results['static_rgb_map'].view(h, w, 3).cpu().numpy(), 0, 1)
     img_pred_ = (img_pred * 255).astype(np.uint8)
+    if select_part_idx is not None:
+        non_selected_part_mask = ray_associations != select_part_idx
+        img_pred_[non_selected_part_mask] = 255
     rgbs = sample['rgbs']
     img_gt = rgbs.view(h, w, 3)
     psnrs.append(psnr(img_gt, img_pred).item())
@@ -147,8 +151,7 @@ def render_to_path(path, select_part_idx=None):
             label_map_transient_pred = (label_map_transient_pred * 255).astype(np.uint8)
             rows.append(np.concatenate([label_map_static_pred, label_map_transient_pred], axis=1))
 
-    ray_associations = results['static_ray_associations'].cpu().numpy()
-    ray_association_map = part_colors[ray_associations].reshape((h, w, 3))
+    ray_association_map = part_colors[ray_associations]
     ray_association_map = (ray_association_map * 255).astype(np.uint8)
     obj_mask = results['static_mask'].cpu().numpy()
     obj_mask = obj_mask[..., np.newaxis] * np.array([[1, 1, 1]])
@@ -167,6 +170,8 @@ if __name__ == '__main__':
     parser.add_argument('--use_ckpt', type=str)
     parser.add_argument('--select_part_idx', type=int)
     parser.add_argument('--sweep_parts', action='store_true', default=False)
+    parser.add_argument('--num_parts', type=int, default=-1)
+    parser.add_argument('--num_images', type=int, default=-1)
     parser.add_argument("opts", nargs=argparse.REMAINDER)
     args = parser.parse_args()
 
@@ -195,7 +200,7 @@ if __name__ == '__main__':
     elif config.dataset_name == 'replica':
         dataset = ReplicaDataset(root_dir=config.environment_dir,
                                  img_downscale=config.img_downscale, split='val',
-                                 things_only=config.things_only)
+                                 things_only=config.things_only if 'things_only' in config else False)
 
     embedding_xyz = PosEmbedding(config.N_emb_xyz - 1, config.N_emb_xyz)
     embedding_dir = PosEmbedding(config.N_emb_dir - 1, config.N_emb_dir)
@@ -222,14 +227,18 @@ if __name__ == '__main__':
     iou_static = []
 
     for i in tqdm(range(len(dataset))):
+        if args.num_images != -1 and i >= args.num_images:
+            continue
         if args.sweep_parts:
             for j in range(config.num_parts):
+                if args.num_parts != -1 and j >= args.num_parts:
+                    continue
                 print(f"Rendering part {j}")
-                path = output_dir / f"{i:03d}"
+                path = output_dir / f"part_{j}"
                 path.mkdir(exist_ok=True)
-                path = path / f"{j}.png"
+                path = path / f"{i:03d}.png"
                 render_to_path(path, j)
-        elif args.select_part_idx:
+        elif args.select_part_idx is not None:
             path = output_dir / f"{i:03d}"
             path.mkdir(exist_ok=True)
             path = path / f"{args.select_part_idx}.png"
