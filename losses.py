@@ -105,7 +105,7 @@ class NerfletWLoss(nn.Module):
                 label_pred = pred['combined_label']
             else:
                 label_pred = pred['static_label']
-            ret['label_cce'] = torch.nn.functional.cross_entropy(label_pred, gt_labels.to(torch.long).squeeze())
+            ret['label_cce'] = torch.nn.functional.cross_entropy(label_pred, gt_labels.to(torch.long))
 
         for k, v in ret.items():
             ret[k] = self.coef * v

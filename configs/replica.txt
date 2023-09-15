@@ -11,3 +11,4 @@ optimizer=adam
 lr=5e-4
 lr_scheduler=cosine
 exp_name=default
+num_classes=101

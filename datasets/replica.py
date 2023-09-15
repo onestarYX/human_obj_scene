@@ -66,6 +66,7 @@ class ReplicaDataset(Dataset):
             self.all_rays = []
             self.all_rgbs = []
             self.all_masks = []
+            self.all_labels = []
             for img_path in self.img_list:
                 t = int(img_path.stem.split('_')[-1])
                 pose = self.c2w_list[t, :3, :4]
@@ -85,6 +86,8 @@ class ReplicaDataset(Dataset):
                 ray_mask = torch.tensor(label_map != 0, dtype=torch.int).flatten()
                 # ray_mask = torch.ones(img.shape[1:], dtype=torch.int).flatten()  # (H*W) valid color area
                 self.all_masks.append(ray_mask)
+                label_map = torch.tensor(label_map, dtype=torch.long).view(-1)
+                self.all_labels.append(label_map)
                 
                 rays_o, rays_d = get_rays(self.directions, c2w) # both (h*w, 3)
                 rays_t = t * torch.ones(len(rays_o), 1)
@@ -98,6 +101,7 @@ class ReplicaDataset(Dataset):
             self.all_rays = torch.cat(self.all_rays, 0) # (len(self.meta['frames])*h*w, 3)
             self.all_rgbs = torch.cat(self.all_rgbs, 0) # (len(self.meta['frames])*h*w, 3)
             self.all_masks = torch.cat(self.all_masks, 0).to(torch.int)
+            self.all_labels = torch.cat(self.all_labels, 0)
 
     def define_transforms(self):
         self.transform = T.ToTensor()
@@ -115,7 +119,7 @@ class ReplicaDataset(Dataset):
             sample = {'rays': self.all_rays[idx, :8],
                       'ts': self.all_rays[idx, 8].long(),
                       'rgbs': self.all_rgbs[idx],
-                      'labels': 0,
+                      'labels': self.all_labels[idx],
                       'ray_mask': self.all_masks[idx]}
 
         else: # create data for each image separately
@@ -138,13 +142,14 @@ class ReplicaDataset(Dataset):
             label_map = label_map.resize(self.img_wh, Image.LANCZOS)
             label_map = np.array(label_map)
             ray_mask = torch.tensor(label_map != 0, dtype=torch.int).flatten()
+            label_map = torch.tensor(label_map, dtype=torch.long).view(-1)
 
             t = 0
             sample = {'rays': rays,
                       'ts': t * torch.ones(len(rays), dtype=torch.long),
                       'rgbs': img,
                       'c2w': c2w,
-                      'labels': 0,
+                      'labels': label_map,
                       'ray_mask': ray_mask
                       }
 

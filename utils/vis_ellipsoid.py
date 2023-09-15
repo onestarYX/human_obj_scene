@@ -64,11 +64,13 @@ def compute_iou(pred, gt, num_cls):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('exp_dir', type=str)
+    parser.add_argument('--exp_dir', type=str, required=True)
     parser.add_argument('--output_dir', type=str, default='results/ellipsoids')
     parser.add_argument('--use_ckpt', type=str)
     parser.add_argument('--render_every', type=int, default=5)
     parser.add_argument('--overwrite', action='store_true', default=False)
+    parser.add_argument('--split', type=str, default='val')
+    parser.add_argument("opts", nargs=argparse.REMAINDER)
     args = parser.parse_args()
 
     exp_dir = Path(args.exp_dir)
@@ -76,21 +78,23 @@ if __name__ == '__main__':
 
     config_path = exp_dir / 'config.json'
     with open(config_path, 'r') as f:
-        config = json.load(f)
-    config = OmegaConf.create(config)
+        file_config = json.load(f)
+    file_config = OmegaConf.create(file_config)
+    cli_config = OmegaConf.from_dotlist(args.opts)
+    config = OmegaConf.merge(file_config, cli_config)
 
     if config.dataset_name == 'sitcom3D':
         kwargs = {'environment_dir': config.environment_dir, 'near_far_version': config.near_far_version, 'val_num': 5,
                   'use_cache': config.use_cache}
         # kwargs['img_downscale'] = args.img_downscale
-        dataset = Sitcom3DDataset(split='test_train', img_downscale=config.img_downscale_val, **kwargs)
+        dataset = Sitcom3DDataset(split=args.split, img_downscale=config.img_downscale_val, **kwargs)
     elif config.dataset_name == 'blender':
         kwargs = {}
         dataset = BlenderDataset(root_dir=config.environment_dir,
-                                 img_wh=config.img_wh, split='test_train')
+                                 img_wh=config.img_wh, split=args.split)
     elif config.dataset_name == 'replica':
         dataset = ReplicaDataset(root_dir=config.environment_dir,
-                                 img_downscale=config.img_downscale, split='test_train')
+                                 img_downscale=config.img_downscale, split=args.split)
 
     embedding_xyz = PosEmbedding(config.N_emb_xyz - 1, config.N_emb_xyz)
     embedding_dir = PosEmbedding(config.N_emb_dir - 1, config.N_emb_dir)

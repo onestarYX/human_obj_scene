@@ -220,8 +220,10 @@ class NerfletWSystem(LightningModule):
         rays = rays.squeeze()  # (H*W, 3)
         rgbs = rgbs.squeeze()  # (H*W, 3)
         ts = ts.squeeze()  # (H*W)
+        gt_labels = gt_labels.squeeze()
         results = self.forward(rays, ts, version="val")
-        loss_d = self.loss(results, rgbs, gt_labels, ray_mask, self.hparams.encode_t, self.hparams.predict_label)
+        loss_d = self.loss(results, rgbs, gt_labels, ray_mask,
+                           self.hparams.encode_t, self.hparams.predict_label, self.hparams.loss_pos_ray_ratio)
         loss = sum(l for l in loss_d.values())
         log = {'val_loss': loss}
         # typ = 'fine' if 'rgb_fine' in results else 'coarse'
