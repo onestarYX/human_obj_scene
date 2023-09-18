@@ -67,7 +67,7 @@ class Nerflet(nn.Module):
                  N_emb_xyz=10, N_emb_dir=4, encode_a=True, encode_t=True,
                  in_channels_a=48, in_channels_t=16,
                  predict_label=True, num_classes=127, beta_min=0.03,
-                 M=16, dim_latent=128, scale_min=0.05, scale_max=2):
+                 M=16, dim_latent=128, scale_min=0.05, scale_max=2, disable_ellipsoid=False):
         """
         ---Parameters for the original NeRF---
         D: number of layers for density (sigma) encoder
@@ -105,6 +105,7 @@ class Nerflet(nn.Module):
         self.embedding_dir = PosEmbedding(N_emb_dir - 1, N_emb_dir)
         self.in_channels_xyz = 6 * N_emb_xyz + 3
         self.in_channels_dir = 6 * N_emb_dir + 3
+        self.disable_ellipsoid = disable_ellipsoid
 
         # xyz encoding layers
         for i in range(D):
@@ -196,17 +197,21 @@ class Nerflet(nn.Module):
         num_rays, num_pts_per_ray, _ = pts.shape
         pts = pts.reshape(-1, 3)
         xyz_ = self.transform_points(pts, translations, rotations)      # (N, M, 3)
-        # Get per-part nerflet ellipsoid distances (||diag(scale^-1) * point||^2)
-        ellipoid_dist = self.compute_point_ellipsoid_dist(xyz_, scales)     # (N, M)
-        # Get ellipsoid occupancy (eqn 6 in the paper PartNeRF)
-        ellipoid_occ = self.apply_sigmoid_with_sharpness(1 - ellipoid_dist)
-        points_in_mask = ellipoid_dist <= 1
+        N = xyz_.shape[0]
+        if self.disable_ellipsoid:
+            ellipsoid_occ = torch.ones(N, self.M, device=xyz_.device)
+            points_in_mask = torch.ones(N, self.M, device=xyz_.device).to(torch.bool)
+        else:
+            # Get per-part nerflet ellipsoid distances (||diag(scale^-1) * point||^2)
+            ellipoid_dist = self.compute_point_ellipsoid_dist(xyz_, scales)     # (N, M)
+            # Get ellipsoid occupancy (eqn 6 in the paper PartNeRF)
+            ellipsoid_occ = self.apply_sigmoid_with_sharpness(1 - ellipoid_dist)
+            points_in_mask = ellipoid_dist <= 1
 
         '''Get static occupancy, pointwise features, and ellipsoid occupancy'''
         # Parallelization by batching over the part dimension for occupancy calculation
         num_points_inside_ellipsoid = points_in_mask.sum(dim=0)
         max_points_inside_ellipsoid = num_points_inside_ellipsoid.max().item()
-        N = xyz_.shape[0]
         static_occ = torch.zeros((N, self.M), device=xyz_.device) - 100  # -100 to make sure sigmoid is 0
         point_feat = torch.zeros((N, self.M, self.dim_point_feat), device=xyz_.device)
         if max_points_inside_ellipsoid != 0:
@@ -241,10 +246,10 @@ class Nerflet(nn.Module):
 
         static_occ = self.apply_sigmoid_with_sharpness(static_occ)
         # Multiply the occupancy of ellipsoid with predicted sigma
-        static_occ = ellipoid_occ * static_occ
+        static_occ = ellipsoid_occ * static_occ
 
         # TODO: think about what's more to add or remove
-        prediction['static_ellipsoid_occ'] = ellipoid_occ.reshape(num_rays, num_pts_per_ray, -1)
+        prediction['static_ellipsoid_occ'] = ellipsoid_occ.reshape(num_rays, num_pts_per_ray, -1)
         prediction['static_occ'] = static_occ.reshape(num_rays, num_pts_per_ray, -1)
         prediction['static_point_feat'] = point_feat.reshape(num_rays, num_pts_per_ray, self.M, -1)   # Might not need it
         prediction['static_points_transformed'] = xyz_.reshape(num_rays, num_pts_per_ray, self.M, 3) # Might not need it

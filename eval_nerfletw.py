@@ -135,7 +135,9 @@ def render_to_path(path, select_part_idx=None):
         label_pred = torch.argmax(label_pred, dim=1).to(torch.long).cpu().numpy()
         label_map_pred = label_colors[label_pred].reshape((h, w, 3))
         label_map_pred = (label_map_pred * 255).astype(np.uint8)
-        iou_combined.append(compute_iou(label_pred, label_gt, config.num_classes))
+        iou = compute_iou(label_pred, label_gt, config.num_classes)
+        iou_combined.append(iou)
+        print(f"Semantic iou: {iou}")
         rows.append(np.concatenate([label_map_gt, label_map_pred], axis=1))
 
         if config.encode_t:

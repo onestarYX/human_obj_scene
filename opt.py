@@ -237,6 +237,7 @@ def get_parser():
                                                                          'batches before calling the step() for optimizer.')
     parser.add_argument('--things_only', action='store_true', default=False)
     parser.add_argument('--loss_pos_ray_ratio', type=float, default=1)
+    parser.add_argument('--disable_ellipsoid', action='store_true', default=False)
 
     return parser
 
