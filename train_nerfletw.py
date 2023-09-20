@@ -262,15 +262,19 @@ def main(hparams):
     save_dir = os.path.join(hparams.environment_dir, "runs")
 
     if hparams.resume_name:
-        timedatestring = hparams.resume_name
+        exp_name = hparams.resume_name
     else:
-        timedatestring = datetime.datetime.now().strftime("%m-%d-%H-%M-%S")
+        exp_name = hparams.exp_name
+        exp_name = f"{exp_name}_np={hparams.num_parts}"
+        if hparams.predict_label:
+            exp_name += '_label'
 
-    # print(hparams.exp_name)
+        time_string = datetime.datetime.now().strftime("%m-%d-%H-%M-%S")
+        exp_name += '_' + time_string
 
     # following pytorch lightning convention here
     logger = TestTubeLogger(save_dir=save_dir,
-                            name=timedatestring,
+                            name=exp_name,
                             debug=False,
                             create_git_tag=False,
                             log_graph=False)
@@ -282,7 +286,7 @@ def main(hparams):
         assert hparams.ckpt_path is not None
 
     # following pytorch lightning convention here
-    dir_path = os.path.join(save_dir, timedatestring, f"version_{version}")
+    dir_path = os.path.join(save_dir, exp_name, f"version_{version}")
     config = vars(hparams)
     config_save_path = os.path.join(dir_path, 'config.json')
     json_obj = json.dumps(config, indent=2)
