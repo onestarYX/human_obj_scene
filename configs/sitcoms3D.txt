@@ -1,3 +1,4 @@
+dataset_name=sitcom3D
 img_downscale=1
 N_importance=64
 N_samples=64

@@ -118,7 +118,8 @@ def render_to_path(path, select_part_idx=None):
     # Predicted static image and predicted static depth
     img_static = np.clip(results['static_rgb_map'].view(h, w, 3).cpu().numpy(), 0, 1)
     img_static_ = (img_static * 255).astype(np.uint8)
-    depth_static = np.array(np_visualize_depth(results['static_depth'].cpu().numpy(), cmap=cv2.COLORMAP_BONE))
+    static_depth = results['static_depth'].cpu().numpy()
+    depth_static = np.array(np_visualize_depth(static_depth, cmap=cv2.COLORMAP_BONE))
     depth_static = depth_static.reshape(h, w, 1)
     depth_static_ = np.repeat(depth_static, 3, axis=2)
     rows.append(np.concatenate([img_static_, depth_static_], axis=1))
@@ -215,9 +216,11 @@ if __name__ == '__main__':
         load_ckpt(embedding_t, args.use_ckpt, model_name='embedding_t')
         embeddings['t'] = embedding_t
 
+    disable_ellipsoid = config.disable_ellipsoid if 'disable_ellipsoid' in config else False
     nerflet = Nerflet(N_emb_xyz=config.N_emb_xyz, N_emb_dir=config.N_emb_dir,
                       encode_a=config.encode_a, encode_t=config.encode_t, predict_label=config.predict_label,
-                      num_classes=config.num_classes, M=config.num_parts).cuda()
+                      num_classes=config.num_classes, M=config.num_parts,
+                      disable_ellipsoid=disable_ellipsoid).cuda()
     load_ckpt(nerflet, args.use_ckpt, model_name='nerflet')
     models = {'nerflet': nerflet}
 
