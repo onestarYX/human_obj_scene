@@ -155,4 +155,13 @@ if __name__ == '__main__':
         pcd.colors = o3d.utility.Vector3dVector(colors)
         geo.append(pcd)
 
+    # For the rest points that have low occupancy
+    pt_rest = xyz[np.invert(pt_to_show_mask)]
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(pt_rest)
+    colors = np.tile(np.array([1e-3, 1e-3, 1e-3]), (len(pt_rest), 1))
+    pcd.colors = o3d.utility.Vector3dVector(colors)
+    pcd = pcd.voxel_down_sample(voxel_size=0.1)
+    geo.append(pcd)
+
     o3d.visualization.draw_geometries(geo)
