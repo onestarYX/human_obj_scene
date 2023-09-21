@@ -59,7 +59,7 @@ if __name__ == '__main__':
     parser.add_argument('--exp_dir', type=str, required=True)
     parser.add_argument('--output_dir', type=str, default='results/ellipsoids')
     parser.add_argument('--use_ckpt', type=str)
-    parser.add_argument('--split', type=str, default='val')
+    parser.add_argument('--split', type=str, default='test_train')
     parser.add_argument("opts", nargs=argparse.REMAINDER)
     args = parser.parse_args()
 

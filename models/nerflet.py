@@ -251,8 +251,8 @@ class Nerflet(nn.Module):
         # TODO: think about what's more to add or remove
         prediction['static_ellipsoid_occ'] = ellipsoid_occ.reshape(num_rays, num_pts_per_ray, -1)
         prediction['static_occ'] = static_occ.reshape(num_rays, num_pts_per_ray, -1)
-        prediction['static_point_feat'] = point_feat.reshape(num_rays, num_pts_per_ray, self.M, -1)   # Might not need it
-        prediction['static_points_transformed'] = xyz_.reshape(num_rays, num_pts_per_ray, self.M, 3) # Might not need it
+        # prediction['static_point_feat'] = point_feat.reshape(num_rays, num_pts_per_ray, self.M, -1)   # Might not need it
+        # prediction['static_points_transformed'] = xyz_.reshape(num_rays, num_pts_per_ray, self.M, 3) # Might not need it
         prediction['static_points_in_mask'] = points_in_mask.reshape(num_rays, num_pts_per_ray, -1)
 
         '''Get ray association'''

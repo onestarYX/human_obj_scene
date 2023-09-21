@@ -60,7 +60,7 @@ if __name__ == '__main__':
     parser.add_argument('--exp_dir', type=str, required=True)
     parser.add_argument('--output_dir', type=str, default='results/ellipsoids')
     parser.add_argument('--use_ckpt', type=str)
-    parser.add_argument('--split', type=str, default='val')
+    parser.add_argument('--split', type=str, default='test_train')
     parser.add_argument("opts", nargs=argparse.REMAINDER)
     args = parser.parse_args()
 
@@ -137,7 +137,7 @@ if __name__ == '__main__':
     results = results.reshape(-1, config.num_parts)
 
     geo = []
-    occ_threshold = 0.99
+    occ_threshold = 0.5
     pt_max_occ, pt_association = results.max(dim=-1)
     pt_to_show_mask = pt_max_occ > occ_threshold
     pt_to_show = xyz[pt_to_show_mask]

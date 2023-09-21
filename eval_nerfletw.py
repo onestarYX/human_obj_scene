@@ -42,12 +42,18 @@ def batched_inference(models, embeddings,
     """Do batched inference on rays using chunk."""
     B = rays.shape[0]
     results = defaultdict(list)
-    for i in range(0, B, chunk):
+    for chunk_idx in range(0, B, chunk):
+        offset = None
+        if i_check and j_check:
+            flat_idx = i_check * 400 + j_check
+            if flat_idx in range(chunk_idx, chunk_idx+chunk):
+                offset = flat_idx - chunk_idx
+
         rendered_ray_chunks = \
             render_rays(models,
                         embeddings,
-                        rays[i:i+chunk],
-                        ts[i:i+chunk] if ts is not None else None,
+                        rays[chunk_idx:chunk_idx+chunk],
+                        ts[chunk_idx:chunk_idx+chunk] if ts is not None else None,
                         predict_label,
                         num_classes,
                         N_samples,
@@ -56,6 +62,8 @@ def batched_inference(models, embeddings,
                         chunk,
                         white_back,
                         test_time=True,
+                        offset=offset,
+                        check_pixel_log=check_pixel_log,
                         **kwargs)
 
         for k, v in rendered_ray_chunks.items():
@@ -86,7 +94,7 @@ def render_to_path(path, select_part_idx=None):
     results = batched_inference(models, embeddings, rays.cuda(), ts.cuda(),
                                 config.predict_label, config.num_classes,
                                 config.N_samples, config.N_importance, config.use_disp,
-                                config.chunk, dataset.white_back, **kwargs)
+                                config.chunk, dataset.white_back)
 
     rows = []
 
@@ -108,6 +116,8 @@ def render_to_path(path, select_part_idx=None):
     if select_part_idx is not None:
         non_selected_part_mask = ray_associations != select_part_idx
         img_pred_[non_selected_part_mask] = 255
+    if i_check and j_check:
+        img_pred_[i_check-2:i_check+2, j_check-2:j_check+2] = np.array([255, 0, 0], dtype=np.uint8)
     rgbs = sample['rgbs']
     img_gt = rgbs.view(h, w, 3)
     psnrs.append(psnr(img_gt, img_pred).item())
@@ -174,6 +184,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_parts', type=int, default=-1)
     parser.add_argument('--num_images', type=int, default=-1)
     parser.add_argument('--split', type=str, default='val')
+    parser.add_argument('--check_pixel', type=int, nargs=4)
     parser.add_argument("opts", nargs=argparse.REMAINDER)
     args = parser.parse_args()
 
@@ -230,9 +241,19 @@ if __name__ == '__main__':
     iou_combined = []
     iou_static = []
 
+    if args.check_pixel:
+        i0, j0, i1, j1 = args.check_pixel
+        cp_list = [(i0, j0), (i1, j1)]
+        log_list = ['logs/log0.txt', 'logs/log1.txt']
+
     for i in tqdm(range(len(dataset))):
         if args.num_images != -1 and i >= args.num_images:
             continue
+        i_check, j_check = (None, None)
+        check_pixel_log = None
+        if args.check_pixel and i < len(cp_list):
+            i_check, j_check = cp_list[i]
+            check_pixel_log = log_list[i]
         if args.sweep_parts:
             for j in range(config.num_parts):
                 if args.num_parts != -1 and j >= args.num_parts:
