@@ -153,6 +153,7 @@ def render_rays(models,
     positive_rays = pred['static_positive_rays']
     results['static_occ'] = static_occ
     results['static_ray_associations'] = static_ray_associations
+    results['static_ellipsoid_occ'] = pred['static_ellipsoid_occ']
 
     # Compute standalone static/transient rgb/depth/label maps
     # TODO: Might consider just using associated parts to determine occupancy. Here using max to stabilize training
