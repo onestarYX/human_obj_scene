@@ -40,7 +40,7 @@ class NerfletWSystem(LightningModule):
         # self.hparams = hparams
         self.save_hyperparameters(hparams)
 
-        self.loss = loss_dict['nerfletw'](coef=1)
+        self.loss = loss_dict['nerfletw'](weight_coverage_loss=hparams.weight_coverage_loss)
 
         self.models_to_train = []
 

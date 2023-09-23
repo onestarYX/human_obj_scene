@@ -69,12 +69,12 @@ class NerfletWLoss(nn.Module):
         s_l: sigma loss (3rd term in equation 13)
     """
 
-    def __init__(self, coef=1, lambda_u=0.01, min_num_rays_per_part=32, max_hitting_parts_per_ray=3):
+    def __init__(self, lambda_u=0.01, min_num_rays_per_part=32, max_hitting_parts_per_ray=3,
+                 weight_coverage_loss=0.01):
         """
         lambda_u: in equation 13
         """
         super().__init__()
-        self.coef = coef
         self.lambda_u = lambda_u
         self.min_num_rays_per_part = min_num_rays_per_part
         self.max_hitting_parts_per_ray = max_hitting_parts_per_ray
@@ -85,7 +85,7 @@ class NerfletWLoss(nn.Module):
             'label_cce': 1,
             'mask_loss': 1,
             'occupancy_loss': 1,
-            'coverage_loss': 0.01,
+            'coverage_loss': weight_coverage_loss,
             'overlap_loss': 0.01
         }
 

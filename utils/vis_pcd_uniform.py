@@ -140,7 +140,7 @@ if __name__ == '__main__':
     results = results.reshape(-1, config.num_parts)
 
     geo = []
-    occ_threshold = 0.99
+    occ_threshold = 0.5
     pt_max_occ, pt_association = results.max(dim=-1)
     pt_to_show_mask = pt_max_occ > occ_threshold
     pt_to_show = xyz[pt_to_show_mask]
