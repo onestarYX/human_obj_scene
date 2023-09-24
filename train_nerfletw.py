@@ -58,7 +58,8 @@ class NerfletWSystem(LightningModule):
                                encode_a=hparams.encode_a, encode_t=hparams.encode_t,
                                predict_label=hparams.predict_label,
                                num_classes=hparams.num_classes,
-                               M=hparams.num_parts, disable_ellipsoid=hparams.disable_ellipsoid)
+                               M=hparams.num_parts, disable_ellipsoid=hparams.disable_ellipsoid,
+                               use_spread_out_bias=hparams.use_spread_out_bias)
         self.models = {'nerflet': self.nerflet}
         self.models_to_train += [self.models]
         self.models_mm_to_train = []

@@ -34,7 +34,7 @@ def inference_pts_occ(model, embeddings, xyz, chunk):
         # Make dummy rays direction and ts
         rays_d = torch.zeros(len(xyz_), 1, 3).to(xyz.device)
         rays_d[:, 0, 0] = 1
-        ts = torch.zeros(len(xyz_)).to(xyz.device)
+        ts = torch.zeros(len(xyz_)).to(xyz.device).to(torch.int)
         pred = get_nerflet_pred(model, embeddings, xyz_, rays_d, ts)
         occ_list.append(pred['static_occ'].cpu())
 
@@ -127,7 +127,7 @@ if __name__ == '__main__':
 
     # Uniformly sample points in the 3D space and make inference
     N_samples = config.N_samples
-    space_size = 4
+    space_size = 6
     multiplier = 3
     xs = torch.linspace(-space_size, space_size, steps=N_samples * multiplier)
     ys = torch.linspace(-space_size, space_size, steps=N_samples * multiplier)

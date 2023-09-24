@@ -5,8 +5,9 @@ from .model_utils import quaternions_to_rotation_matrices
 
 
 class TranslationPredictor(nn.Module):
-    def __init__(self, in_channels, hidden_dim=256):
+    def __init__(self, in_channels, hidden_dim=256, use_spread_out_bias=False):
         super().__init__()
+        self.use_spread_out_bias = use_spread_out_bias
         self.fc = nn.Sequential(
             # TODO: do we need hidden layers?
             # nn.Linear(in_features=in_channels, out_features=hidden_dim),
@@ -14,6 +15,9 @@ class TranslationPredictor(nn.Module):
             # nn.ReLU(),
             nn.Linear(in_features=in_channels, out_features=3)
         )
+        if use_spread_out_bias:
+            spread_out_bias = torch.rand(3,) - 0.5
+            self.fc[0].bias = nn.Parameter(spread_out_bias)
 
     def forward(self, x):
         return self.fc(x)
@@ -67,7 +71,8 @@ class Nerflet(nn.Module):
                  N_emb_xyz=10, N_emb_dir=4, encode_a=True, encode_t=True,
                  in_channels_a=48, in_channels_t=16,
                  predict_label=True, num_classes=127, beta_min=0.03,
-                 M=16, dim_latent=128, scale_min=0.05, scale_max=2, disable_ellipsoid=False):
+                 M=16, dim_latent=128, scale_min=0.05, scale_max=2, disable_ellipsoid=False,
+                 use_spread_out_bias=False):
         """
         ---Parameters for the original NeRF---
         D: number of layers for density (sigma) encoder
@@ -157,7 +162,7 @@ class Nerflet(nn.Module):
         self.part_label_logits = nn.Embedding(num_embeddings=self.M, embedding_dim=self.num_classes)
 
         # Structure networks (predicting pose of each nerflet)
-        self.translation_predictor = TranslationPredictor(in_channels=dim_latent)
+        self.translation_predictor = TranslationPredictor(in_channels=dim_latent, use_spread_out_bias=use_spread_out_bias)
         self.rotation_predictor = RotationPredictor(in_channels=dim_latent)
         self.scale_predictor = ScalePredictor(in_channels=dim_latent, min_a=scale_min, max_a=scale_max)
 

@@ -239,6 +239,7 @@ def get_parser():
     parser.add_argument('--loss_pos_ray_ratio', type=float, default=1)
     parser.add_argument('--disable_ellipsoid', action='store_true', default=False)
     parser.add_argument('--weight_coverage_loss', type=float, default=0.01)
+    parser.add_argument('--use_spread_out_bias', action='store_true', default=False)
 
     return parser
 
