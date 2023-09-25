@@ -59,7 +59,7 @@ def get_parser():
 
     parser.add_argument('--environment_dir', type=str, required=False, help='directory to the environment')
     parser.add_argument('--dataset_name', type=str, default='sitcom3D',
-                        choices=['blender', 'sitcom3D', 'replica'],
+                        choices=['blender', 'sitcom3D', 'replica', '3dfront'],
                         help='which dataset to train/val')
     # for blender
     parser.add_argument('--data_perturb', nargs="+", type=str, default=[],
@@ -165,7 +165,7 @@ def get_parser():
 
     parser.add_argument('--exp_name', type=str, default='exp',
                         help='experiment name')
-    parser.add_argument('--refresh_every', type=int, default=10,
+    parser.add_argument('--refresh_every', type=int, default=20,
                         help='print the progress bar every X steps')
 
     ###########################

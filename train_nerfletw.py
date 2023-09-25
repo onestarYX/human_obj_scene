@@ -12,6 +12,7 @@ from pytorch_lightning.loggers import TestTubeLogger
 from datasets.sitcom3D import Sitcom3DDataset
 from datasets.blender import BlenderDataset
 from datasets.replica import ReplicaDataset
+from datasets.front import ThreeDFrontDataset
 from datasets.ray_utils import get_rays_batch_version
 
 # models
@@ -108,6 +109,11 @@ class NerfletWSystem(LightningModule):
             self.val_dataset = ReplicaDataset(root_dir=self.hparams.environment_dir,
                                               img_downscale=self.hparams.img_downscale, split='val',
                                               things_only=self.hparams.things_only)
+        elif self.hparams.dataset_name == '3dfront':
+            self.train_dataset = ThreeDFrontDataset(root_dir=self.hparams.environment_dir,
+                                                    img_downscale=self.hparams.img_downscale, split='train')
+            self.val_dataset = ThreeDFrontDataset(root_dir=self.hparams.environment_dir,
+                                                  img_downscale=self.hparams.img_downscale, split='val')
 
     def load_from_ckpt_path(self, ckpt_path):
         """TODO(ethan): move this elsewhere
