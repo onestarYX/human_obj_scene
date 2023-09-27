@@ -13,6 +13,7 @@ from models.model_utils import quaternions_to_rotation_matrices
 from datasets.sitcom3D import Sitcom3DDataset
 from datasets.blender import BlenderDataset
 from datasets.replica import ReplicaDataset
+from datasets.front import ThreeDFrontDataset
 from utils import load_ckpt
 import numpy as np
 import argparse
@@ -23,6 +24,7 @@ from pathlib import Path
 import imageio
 from tqdm import tqdm
 import open3d as o3d
+from matplotlib import pyplot as plt
 
 @torch.no_grad()
 def inference_pts_occ(model, embeddings, xyz, chunk):
@@ -42,24 +44,13 @@ def inference_pts_occ(model, embeddings, xyz, chunk):
     return occ_list
 
 
-def compute_iou(pred, gt, num_cls):
-    iou = []
-    for cls_idx in range(num_cls):
-        denom = np.logical_or((pred == cls_idx), (gt == cls_idx)).astype(int).sum()
-        if denom == 0:
-            iou.append(1)
-        else:
-            numer = np.logical_and((pred == cls_idx), (gt == cls_idx)).astype(int).sum()
-            iou.append(numer / denom)
-    return np.mean(iou)
-
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--exp_dir', type=str, required=True)
     parser.add_argument('--output_dir', type=str, default='results/ellipsoids')
     parser.add_argument('--use_ckpt', type=str)
     parser.add_argument('--split', type=str, default='test_train')
+    parser.add_argument('--view_in_3d', action='store_true', default=False)
     parser.add_argument("opts", nargs=argparse.REMAINDER)
     args = parser.parse_args()
 
@@ -87,6 +78,9 @@ if __name__ == '__main__':
     elif config.dataset_name == 'replica':
         dataset = ReplicaDataset(root_dir=config.environment_dir,
                                  img_downscale=config.img_downscale, split=args.split)
+    elif config.dataset_name == '3dfront':
+        dataset = ThreeDFrontDataset(root_dir=config.environment_dir,
+                                     img_downscale=config.img_downscale, split=args.split)
 
     # Construct and load model
     embedding_xyz = PosEmbedding(config.N_emb_xyz - 1, config.N_emb_xyz)
@@ -94,7 +88,7 @@ if __name__ == '__main__':
     embeddings = {'xyz': embedding_xyz, 'dir': embedding_dir}
 
     if args.use_ckpt:
-        ckpt_path = Path(args.use_ckpt)
+        ckpt_paths = [Path(args.use_ckpt)]
     else:
         ckpt_paths = []
         ckpt_dir = exp_dir / 'ckpts'
@@ -104,58 +98,94 @@ if __name__ == '__main__':
             step = path.stem.split('=')[-1]
             return int(step)
         ckpt_paths.sort(key=get_step_from_path)
-        ckpt_path = ckpt_paths[-1]
-    print(f"Working on {ckpt_path}")
-    ckpt_name = ckpt_path.stem
-
-    if config.encode_a:
-        embedding_a = torch.nn.Embedding(config.N_vocab, config.N_a).cuda()
-        load_ckpt(embedding_a, ckpt_path, model_name='embedding_a')
-        embeddings['a'] = embedding_a
-    if config.encode_t:
-        embedding_t = torch.nn.Embedding(config.N_vocab, config.N_tau).cuda()
-        load_ckpt(embedding_t, ckpt_path, model_name='embedding_t')
-        embeddings['t'] = embedding_t
-    nerflet = Nerflet(N_emb_xyz=config.N_emb_xyz, N_emb_dir=config.N_emb_dir,
-                      encode_a=config.encode_a, encode_t=config.encode_t, predict_label=config.predict_label,
-                      num_classes=config.num_classes, M=config.num_parts).cuda()
-    load_ckpt(nerflet, ckpt_path, model_name='nerflet')
 
     # Prepare colors for each part
     np.random.seed(19)
     part_colors = np.random.rand(config.num_parts, 3)
+    writer = imageio.get_writer(output_dir / 'out.mp4', fps=10)
+    for ckpt_path in ckpt_paths:
+        print(f"Working on {ckpt_path}")
+        ckpt_name = ckpt_path.stem
 
-    # Uniformly sample points in the 3D space and make inference
-    N_samples = config.N_samples
-    space_size = 6
-    multiplier = 3
-    xs = torch.linspace(-space_size, space_size, steps=N_samples * multiplier)
-    ys = torch.linspace(-space_size, space_size, steps=N_samples * multiplier)
-    zs = torch.linspace(-space_size, space_size, steps=N_samples * multiplier)
-    xyz = torch.cartesian_prod(xs, ys, zs)
-    xyz = xyz.reshape(-1, N_samples, 3).cuda()
-    results = inference_pts_occ(nerflet, embeddings, xyz, config.chunk)
+        if config.encode_a:
+            embedding_a = torch.nn.Embedding(config.N_vocab, config.N_a).cuda()
+            load_ckpt(embedding_a, ckpt_path, model_name='embedding_a')
+            embeddings['a'] = embedding_a
+        if config.encode_t:
+            embedding_t = torch.nn.Embedding(config.N_vocab, config.N_tau).cuda()
+            load_ckpt(embedding_t, ckpt_path, model_name='embedding_t')
+            embeddings['t'] = embedding_t
+        nerflet = Nerflet(N_emb_xyz=config.N_emb_xyz, N_emb_dir=config.N_emb_dir,
+                          encode_a=config.encode_a, encode_t=config.encode_t, predict_label=config.predict_label,
+                          num_classes=config.num_classes, M=config.num_parts).cuda()
+        load_ckpt(nerflet, ckpt_path, model_name='nerflet')
 
-    xyz = xyz.reshape(-1, 3).cpu()
-    results = results.reshape(-1, config.num_parts)
+        # Uniformly sample points in the 3D space and make inference
+        N_samples = config.N_samples
+        space_size = 6
+        multiplier = 3
+        xs = torch.linspace(-space_size, space_size, steps=N_samples * multiplier)
+        ys = torch.linspace(-space_size, space_size, steps=N_samples * multiplier)
+        zs = torch.linspace(-space_size, space_size, steps=N_samples * multiplier)
+        xyz = torch.cartesian_prod(xs, ys, zs)
+        xyz = xyz.reshape(-1, N_samples, 3).cuda()
+        results = inference_pts_occ(nerflet, embeddings, xyz, config.chunk)
 
-    geo = []
-    occ_threshold = 0.5
-    pt_max_occ, pt_association = results.max(dim=-1)
-    pt_to_show_mask = pt_max_occ > occ_threshold
-    pt_to_show = xyz[pt_to_show_mask]
-    pt_to_show_association = pt_association[pt_to_show_mask]
-    for idx in range(config.num_parts):
-        pt_part_mask = pt_to_show_association == idx
-        pt_part = pt_to_show[pt_part_mask]
-        if len(pt_part) == 0:
-            continue
-        part_color = part_colors[idx]
+        xyz = xyz.reshape(-1, 3).cpu()
+        results = results.reshape(-1, config.num_parts)
 
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(pt_part)
-        colors = np.tile(part_color, (len(pt_part), 1))
-        pcd.colors = o3d.utility.Vector3dVector(colors)
-        geo.append(pcd)
+        geo = []
+        occ_threshold = 0.5
+        pt_max_occ, pt_association = results.max(dim=-1)
+        pt_to_show_mask = pt_max_occ > occ_threshold
+        pt_to_show = xyz[pt_to_show_mask]
+        pt_to_show_association = pt_association[pt_to_show_mask]
+        for idx in range(config.num_parts):
+            pt_part_mask = pt_to_show_association == idx
+            pt_part = pt_to_show[pt_part_mask]
+            if len(pt_part) == 0:
+                continue
+            part_color = part_colors[idx]
 
-    o3d.visualization.draw_geometries(geo)
+            pcd = o3d.geometry.PointCloud()
+            pcd.points = o3d.utility.Vector3dVector(pt_part)
+            colors = np.tile(part_color, (len(pt_part), 1))
+            pcd.colors = o3d.utility.Vector3dVector(colors)
+            geo.append(pcd)
+
+        if args.view_in_3d:
+            o3d.visualization.draw_geometries(geo)
+        else:
+            sample_view = dataset[0]
+            c2w = sample_view['c2w']
+            if config.dataset_name == 'sitcom3D':
+                w, h = sample_view['img_wh']
+            elif config.dataset_name == 'blender':
+                w, h = config.img_wh
+            elif config.dataset_name == 'replica' or config.dataset_name == '3dfront':
+                w, h = dataset.img_wh
+
+            vis = o3d.visualization.Visualizer()
+            vis.create_window(width=w, height=h, visible=True)
+            for geo_ in geo:
+                vis.add_geometry(geo_)
+            vis.poll_events()
+            ctr = vis.get_view_control()
+            cam_params = ctr.convert_to_pinhole_camera_parameters()
+            cam_params.extrinsic = np.concatenate((c2w.numpy(), np.array([[0, 0, 0, 1]])), axis=0)
+            K_ = dataset.K
+            K_[0, 2] -= 0.5
+            K_[1, 2] -= 0.5
+            cam_params.intrinsic = o3d.camera.PinholeCameraIntrinsic(w, h, dataset.K)
+            ctr.convert_from_pinhole_camera_parameters(cam_params)
+            vis.update_renderer()
+            image = vis.capture_screen_float_buffer(do_render=True)
+            image = (np.asarray(image) * 255).astype(np.uint8)
+            vis.destroy_window()
+
+            out_img_path = output_dir / f"{ckpt_name}.png"
+            plt.imsave(out_img_path, image)
+            writer.append_data(image)
+
+    writer.close()
+
