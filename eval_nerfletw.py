@@ -104,7 +104,7 @@ def render_to_path(path, select_part_idx=None):
         w, h = sample['img_wh']
     elif config.dataset_name == 'blender':
         w, h = config.img_wh
-    elif config.dataset_name == 'replica':
+    elif config.dataset_name == 'replica' or config.dataset_name == '3dfront':
         w, h = dataset.img_wh
 
     # GT image and predicted combined image
