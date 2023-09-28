@@ -111,9 +111,11 @@ class NerfletWSystem(LightningModule):
                                               things_only=self.hparams.things_only)
         elif self.hparams.dataset_name == '3dfront':
             self.train_dataset = ThreeDFrontDataset(root_dir=self.hparams.environment_dir,
-                                                    img_downscale=self.hparams.img_downscale, split='train')
+                                                    img_downscale=self.hparams.img_downscale, split='train',
+                                                    near=self.hparams.near, far=self.hparams.far)
             self.val_dataset = ThreeDFrontDataset(root_dir=self.hparams.environment_dir,
-                                                  img_downscale=self.hparams.img_downscale, split='val')
+                                                  img_downscale=self.hparams.img_downscale, split='val',
+                                                  near=self.hparams.near, far=self.hparams.far)
 
     def load_from_ckpt_path(self, ckpt_path):
         """TODO(ethan): move this elsewhere

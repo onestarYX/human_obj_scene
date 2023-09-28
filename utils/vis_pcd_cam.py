@@ -14,6 +14,7 @@ from models.model_utils import quaternions_to_rotation_matrices
 from datasets.sitcom3D import Sitcom3DDataset
 from datasets.blender import BlenderDataset
 from datasets.replica import ReplicaDataset
+from datasets.front import ThreeDFrontDataset
 from utils import load_ckpt
 import numpy as np
 import argparse
@@ -58,9 +59,10 @@ def compute_iou(pred, gt, num_cls):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--exp_dir', type=str, required=True)
-    parser.add_argument('--output_dir', type=str, default='results/ellipsoids')
+    parser.add_argument('--output_dir', type=str, default='results/pcd_cam')
     parser.add_argument('--use_ckpt', type=str)
     parser.add_argument('--split', type=str, default='test_train')
+    parser.add_argument('--num_test', type=int, default=5)
     parser.add_argument("opts", nargs=argparse.REMAINDER)
     args = parser.parse_args()
 
@@ -88,6 +90,10 @@ if __name__ == '__main__':
     elif config.dataset_name == 'replica':
         dataset = ReplicaDataset(root_dir=config.environment_dir,
                                  img_downscale=config.img_downscale, split=args.split)
+    elif config.dataset_name == '3dfront':
+        dataset = ThreeDFrontDataset(root_dir=config.environment_dir,
+                                     img_downscale=config.img_downscale, split=args.split,
+                                     near=config.near, far=config.far)
 
     # Construct and load model
     embedding_xyz = PosEmbedding(config.N_emb_xyz - 1, config.N_emb_xyz)
@@ -127,41 +133,43 @@ if __name__ == '__main__':
     part_colors = np.random.rand(config.num_parts, 3)
 
     # Uniformly sample points in the 3D space and make inference
-    sample = dataset[0]
-    rays = sample['rays']
-    xyz, _, _ = get_input_from_rays(rays, config.N_samples, config.use_disp)
-    xyz = xyz.cuda()
-    results = inference_pts_occ(nerflet, embeddings, xyz, config.chunk)
+    for i in range(args.num_test):
+        print(f"Checking image {i}")
+        sample = dataset[i]
+        rays = sample['rays']
+        xyz, _, _ = get_input_from_rays(rays, config.N_samples, config.use_disp)
+        xyz = xyz.cuda()
+        results = inference_pts_occ(nerflet, embeddings, xyz, config.chunk)
 
-    xyz = xyz.reshape(-1, 3).cpu()
-    results = results.reshape(-1, config.num_parts)
+        xyz = xyz.reshape(-1, 3).cpu()
+        results = results.reshape(-1, config.num_parts)
 
-    geo = []
-    occ_threshold = 0.5
-    pt_max_occ, pt_association = results.max(dim=-1)
-    pt_to_show_mask = pt_max_occ > occ_threshold
-    pt_to_show = xyz[pt_to_show_mask]
-    pt_to_show_association = pt_association[pt_to_show_mask]
-    for idx in range(config.num_parts):
-        pt_part_mask = pt_to_show_association == idx
-        pt_part = pt_to_show[pt_part_mask]
-        if len(pt_part) == 0:
-            continue
-        part_color = part_colors[idx]
+        geo = []
+        occ_threshold = 0.5
+        pt_max_occ, pt_association = results.max(dim=-1)
+        pt_to_show_mask = pt_max_occ > occ_threshold
+        pt_to_show = xyz[pt_to_show_mask]
+        pt_to_show_association = pt_association[pt_to_show_mask]
+        for idx in range(config.num_parts):
+            pt_part_mask = pt_to_show_association == idx
+            pt_part = pt_to_show[pt_part_mask]
+            if len(pt_part) == 0:
+                continue
+            part_color = part_colors[idx]
 
+            pcd = o3d.geometry.PointCloud()
+            pcd.points = o3d.utility.Vector3dVector(pt_part)
+            colors = np.tile(part_color, (len(pt_part), 1))
+            pcd.colors = o3d.utility.Vector3dVector(colors)
+            geo.append(pcd)
+
+        # For the rest points that have low occupancy
+        pt_rest = xyz[np.invert(pt_to_show_mask)]
         pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(pt_part)
-        colors = np.tile(part_color, (len(pt_part), 1))
+        pcd.points = o3d.utility.Vector3dVector(pt_rest)
+        colors = np.tile(np.array([1e-3, 1e-3, 1e-3]), (len(pt_rest), 1))
         pcd.colors = o3d.utility.Vector3dVector(colors)
+        pcd = pcd.voxel_down_sample(voxel_size=0.1)
         geo.append(pcd)
 
-    # For the rest points that have low occupancy
-    pt_rest = xyz[np.invert(pt_to_show_mask)]
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(pt_rest)
-    colors = np.tile(np.array([1e-3, 1e-3, 1e-3]), (len(pt_rest), 1))
-    pcd.colors = o3d.utility.Vector3dVector(colors)
-    pcd = pcd.voxel_down_sample(voxel_size=0.1)
-    geo.append(pcd)
-
-    o3d.visualization.draw_geometries(geo)
+        o3d.visualization.draw_geometries(geo)

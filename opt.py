@@ -240,6 +240,8 @@ def get_parser():
     parser.add_argument('--disable_ellipsoid', action='store_true', default=False)
     parser.add_argument('--weight_coverage_loss', type=float, default=0.01)
     parser.add_argument('--use_spread_out_bias', action='store_true', default=False)
+    parser.add_argument('--near', type=float, default=2.0)
+    parser.add_argument('--far', type=float, default=6.0)
 
     return parser
 

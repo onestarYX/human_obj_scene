@@ -14,7 +14,7 @@ from datasets.ray_utils import *
 
 
 class ThreeDFrontDataset(Dataset):
-    def __init__(self, root_dir, split='train', img_downscale=1, test_imgs=[], train_ratio=0.8):
+    def __init__(self, root_dir, split='train', img_downscale=1, test_imgs=[], train_ratio=0.8, near=2, far=6):
         self.root_dir = Path(root_dir)
         self.split = split
         self.train_ratio = train_ratio
@@ -23,6 +23,8 @@ class ThreeDFrontDataset(Dataset):
         self.define_transforms()
         self.test_imgs = test_imgs
         self.white_back = True
+        self.near = near
+        self.far = far
         self.read_meta()
 
     def read_meta(self):
@@ -57,8 +59,6 @@ class ThreeDFrontDataset(Dataset):
 
         w, h = self.img_wh
         # bounds, common for all scenes
-        self.near = 2.0
-        self.far = 6.0
         self.bounds = np.array([self.near, self.far])
         
         # ray directions for all pixels, same for all images (same H, W, focal)
