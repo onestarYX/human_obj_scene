@@ -217,7 +217,8 @@ if __name__ == '__main__':
                                  things_only=config.things_only if 'things_only' in config else False)
     elif config.dataset_name == '3dfront':
         dataset = ThreeDFrontDataset(root_dir=config.environment_dir,
-                                     img_downscale=config.img_downscale, split=args.split)
+                                     img_downscale=config.img_downscale, split=args.split,
+                                     near=config.near, far=config.far)
 
     embedding_xyz = PosEmbedding(config.N_emb_xyz - 1, config.N_emb_xyz)
     embedding_dir = PosEmbedding(config.N_emb_dir - 1, config.N_emb_dir)

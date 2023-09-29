@@ -122,8 +122,8 @@ if __name__ == '__main__':
 
         # Uniformly sample points in the 3D space and make inference
         N_samples = config.N_samples
-        space_size = 6
-        multiplier = 3
+        space_size = 9
+        multiplier = 4
         xs = torch.linspace(-space_size, space_size, steps=N_samples * multiplier)
         ys = torch.linspace(-space_size, space_size, steps=N_samples * multiplier)
         zs = torch.linspace(-space_size, space_size, steps=N_samples * multiplier)
