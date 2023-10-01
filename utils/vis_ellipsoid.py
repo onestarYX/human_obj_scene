@@ -142,7 +142,11 @@ if __name__ == '__main__':
 
         nerflet = Nerflet(N_emb_xyz=config.N_emb_xyz, N_emb_dir=config.N_emb_dir,
                           encode_a=config.encode_a, encode_t=config.encode_t, predict_label=config.predict_label,
-                          num_classes=config.num_classes, M=config.num_parts).cuda()
+                          num_classes=config.num_classes, M=config.num_parts,
+                          disable_ellipsoid=config.disable_ellipsoid,
+                          scale_min=config.scale_min, scale_max=config.scale_max,
+                          use_spread_out_bias=config.use_spread_out_bias
+                          ).cuda()
         load_ckpt(nerflet, ckpt_path, model_name='nerflet')
 
         sample = dataset[0]

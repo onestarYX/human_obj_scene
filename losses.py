@@ -85,8 +85,12 @@ class NerfletWLoss(nn.Module):
             'label_cce': 1,
             'mask_loss': 1,
             'occupancy_loss': 1,
-            'coverage_loss': weight_coverage_loss,
-            'overlap_loss': 0.01
+            # 'occupancy_loss_ell': 0.0001,
+            # 'coverage_loss': weight_coverage_loss,
+            # 'overlap_loss': 0.01
+            'occupancy_loss_ell': 1,
+            'coverage_loss': 1,
+            'overlap_loss': 1
         }
 
     def forward(self, pred, gt_rgbs, gt_labels, ray_mask, encode_t=True, predict_label=True, loss_pos_ray_ratio=1):
@@ -120,13 +124,16 @@ class NerfletWLoss(nn.Module):
             ret['label_cce'] = torch.nn.functional.cross_entropy(label_pred, gt_labels.to(torch.long))
 
         # Mask loss
-        ret['mask_loss'] = torch.norm(pred['static_mask'] - ray_mask)
+        ret['mask_loss'] = torch.mean((pred['static_mask'] - ray_mask) ** 2)
 
         # Occupancy loss
         ray_max_occ = pred['static_occ'].max(-1)[0].max(-1)[0]
+        ret['occupancy_loss'] = torch.nn.functional.binary_cross_entropy(ray_max_occ, ray_mask.to(torch.float32), reduction='mean')
+
+
+        # Occupancy loss for ellipsoids
         ray_max_ell_occ = pred['static_ellipsoid_occ'].max(-1)[0].max(-1)[0]
-        ret['occupancy_loss'] = torch.nn.functional.binary_cross_entropy(ray_max_occ, ray_mask.to(torch.float32), reduction='mean') + \
-                                torch.nn.functional.binary_cross_entropy(ray_max_ell_occ, ray_mask.to(torch.float32), reduction='mean')
+        ret['occupancy_loss_ell'] = torch.nn.functional.binary_cross_entropy(ray_max_ell_occ, ray_mask.to(torch.float32), reduction='mean')
 
         # Coverage loss
         part_ray_max_occ = pred['static_occ'].max(1)[0]
@@ -135,7 +142,8 @@ class NerfletWLoss(nn.Module):
         ret['coverage_loss'] = -torch.log(part_ray_max_occ_topk + sm).mean()
 
         # Overlapping loss
-        ray_occ_sum = part_ray_max_occ.sum(-1)
+        # ray_occ_sum = part_ray_max_occ.sum(-1)
+        ray_occ_sum = pred['static_ellipsoid_occ'].max(1)[0].sum(-1)
         zero_tensor = torch.zeros_like(ray_occ_sum)
         ret['overlap_loss'] = torch.maximum(ray_occ_sum - self.max_hitting_parts_per_ray, zero_tensor).mean()
 

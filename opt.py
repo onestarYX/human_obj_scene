@@ -242,6 +242,8 @@ def get_parser():
     parser.add_argument('--use_spread_out_bias', action='store_true', default=False)
     parser.add_argument('--near', type=float, default=2.0)
     parser.add_argument('--far', type=float, default=6.0)
+    parser.add_argument('--scale_min', type=float, default=0.05)
+    parser.add_argument('--scale_max', type=float, default=2)
 
     return parser
 
