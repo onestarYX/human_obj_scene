@@ -1,7 +1,7 @@
 dataset_name=3dfront
 img_downscale=1
 N_importance=64
-N_samples=64
+N_samples=128
 beta_min=0.03
 N_vocab=1000
 encode_a=False
@@ -13,3 +13,5 @@ lr=5e-4
 lr_scheduler=cosine
 exp_name=default
 num_classes=101
+near=2
+far=12

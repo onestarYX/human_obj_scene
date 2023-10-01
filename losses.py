@@ -85,12 +85,12 @@ class NerfletWLoss(nn.Module):
             'label_cce': 1,
             'mask_loss': 1,
             'occupancy_loss': 1,
-            # 'occupancy_loss_ell': 0.0001,
-            # 'coverage_loss': weight_coverage_loss,
-            # 'overlap_loss': 0.01
-            'occupancy_loss_ell': 1,
-            'coverage_loss': 1,
-            'overlap_loss': 1
+            'occupancy_loss_ell': 0.0001,
+            'coverage_loss': weight_coverage_loss,
+            'overlap_loss': 0.01,
+            # 'occupancy_loss_ell': 1,
+            # 'coverage_loss': 1,
+            # 'overlap_loss': 1
         }
 
     def forward(self, pred, gt_rgbs, gt_labels, ray_mask, encode_t=True, predict_label=True, loss_pos_ray_ratio=1):
