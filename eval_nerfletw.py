@@ -207,7 +207,7 @@ if __name__ == '__main__':
         # kwargs['img_downscale'] = config.img_downscale
         kwargs['val_num'] = 5
         kwargs['use_cache'] = config.use_cache
-        dataset = Sitcom3DDataset(split=args.split, img_downscale=config.img_downscale_val, **kwargs)
+        dataset = Sitcom3DDataset(split=args.split, img_downscale=config.img_downscale, **kwargs)
     elif config.dataset_name == 'blender':
         dataset = BlenderDataset(root_dir=config.environment_dir,
                                  img_wh=config.img_wh, split=args.split)

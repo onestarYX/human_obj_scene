@@ -141,9 +141,9 @@ if __name__ == '__main__':
         geo = []
         occ_threshold = 0.5
         pt_max_occ, pt_association = results.max(dim=-1)
-        pt_to_show_mask = pt_max_occ > occ_threshold
-        pt_to_show = xyz[pt_to_show_mask]
-        pt_to_show_association = pt_association[pt_to_show_mask]
+        pt_occupied_mask = pt_max_occ > occ_threshold
+        pt_to_show = xyz[pt_occupied_mask]
+        pt_to_show_association = pt_association[pt_occupied_mask]
         for idx in range(config.num_parts):
             pt_part_mask = pt_to_show_association == idx
             pt_part = pt_to_show[pt_part_mask]

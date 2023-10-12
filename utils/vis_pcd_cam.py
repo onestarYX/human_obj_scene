@@ -36,7 +36,7 @@ def inference_pts_occ(model, embeddings, xyz, chunk):
         # Make dummy rays direction and ts
         rays_d = torch.zeros(len(xyz_), 1, 3).to(xyz.device)
         rays_d[:, 0, 0] = 1
-        ts = torch.zeros(len(xyz_)).to(xyz.device)
+        ts = torch.zeros(len(xyz_)).to(torch.int32).to(xyz.device)
         pred = get_nerflet_pred(model, embeddings, xyz_, rays_d, ts)
         occ_list.append(pred['static_occ'].cpu())
 
@@ -82,7 +82,7 @@ if __name__ == '__main__':
         kwargs = {'environment_dir': config.environment_dir, 'near_far_version': config.near_far_version, 'val_num': 5,
                   'use_cache': config.use_cache}
         # kwargs['img_downscale'] = args.img_downscale
-        dataset = Sitcom3DDataset(split=args.split, img_downscale=config.img_downscale_val, **kwargs)
+        dataset = Sitcom3DDataset(split=args.split, img_downscale=config.img_downscale, **kwargs)
     elif config.dataset_name == 'blender':
         kwargs = {}
         dataset = BlenderDataset(root_dir=config.environment_dir,
@@ -151,9 +151,9 @@ if __name__ == '__main__':
         geo = []
         occ_threshold = 0.5
         pt_max_occ, pt_association = results.max(dim=-1)
-        pt_to_show_mask = pt_max_occ > occ_threshold
-        pt_to_show = xyz[pt_to_show_mask]
-        pt_to_show_association = pt_association[pt_to_show_mask]
+        pt_occupied_mask = pt_max_occ > occ_threshold
+        pt_to_show = xyz[pt_occupied_mask]
+        pt_to_show_association = pt_association[pt_occupied_mask]
         for idx in range(config.num_parts):
             pt_part_mask = pt_to_show_association == idx
             pt_part = pt_to_show[pt_part_mask]
@@ -168,7 +168,7 @@ if __name__ == '__main__':
             geo.append(pcd)
 
         # For the rest points that have low occupancy
-        pt_rest = xyz[np.invert(pt_to_show_mask)]
+        pt_rest = xyz[np.invert(pt_occupied_mask)]
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(pt_rest)
         colors = np.tile(np.array([1e-3, 1e-3, 1e-3]), (len(pt_rest), 1))
