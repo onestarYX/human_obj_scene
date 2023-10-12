@@ -244,6 +244,7 @@ def get_parser():
     parser.add_argument('--far', type=float, default=6.0)
     parser.add_argument('--scale_min', type=float, default=0.05)
     parser.add_argument('--scale_max', type=float, default=2)
+    parser.add_argument('--use_mask_loss', type=str2bool, default="True")
 
     return parser
 

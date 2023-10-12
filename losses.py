@@ -70,7 +70,7 @@ class NerfletWLoss(nn.Module):
     """
 
     def __init__(self, lambda_u=0.01, min_num_rays_per_part=32, max_hitting_parts_per_ray=3,
-                 weight_coverage_loss=0.01):
+                 weight_coverage_loss=0.01, use_mask_loss=True):
         """
         lambda_u: in equation 13
         """
@@ -92,6 +92,7 @@ class NerfletWLoss(nn.Module):
             # 'coverage_loss': 1,
             # 'overlap_loss': 1
         }
+        self.use_mask_loss = use_mask_loss
 
     def forward(self, pred, gt_rgbs, gt_labels, ray_mask, encode_t=True, predict_label=True, loss_pos_ray_ratio=1):
         if loss_pos_ray_ratio != 1:
@@ -124,7 +125,8 @@ class NerfletWLoss(nn.Module):
             ret['label_cce'] = torch.nn.functional.cross_entropy(label_pred, gt_labels.to(torch.long))
 
         # Mask loss
-        ret['mask_loss'] = torch.mean((pred['static_mask'] - ray_mask) ** 2)
+        if self.use_mask_loss:
+            ret['mask_loss'] = torch.mean((pred['static_mask'] - ray_mask) ** 2)
 
         # Occupancy loss
         ray_max_occ = pred['static_occ'].max(-1)[0].max(-1)[0]
