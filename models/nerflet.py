@@ -5,7 +5,7 @@ from .model_utils import quaternions_to_rotation_matrices
 
 
 class TranslationPredictor(nn.Module):
-    def __init__(self, in_channels, hidden_dim=256, use_spread_out_bias=False):
+    def __init__(self, in_channels, hidden_dim=256, use_spread_out_bias=False, bbox=None):
         super().__init__()
         self.use_spread_out_bias = use_spread_out_bias
         self.fc = nn.Sequential(
@@ -18,9 +18,18 @@ class TranslationPredictor(nn.Module):
         if use_spread_out_bias:
             spread_out_bias = torch.rand(3,) - 0.5
             self.fc[0].bias = nn.Parameter(spread_out_bias)
+        self.bbox = bbox
 
     def forward(self, x):
-        return self.fc(x)
+        res = self.fc(x)
+        if self.bbox is not None:
+            min_point = torch.tensor(self.bbox[0], device=x.device, dtype=torch.float32)\
+                .unsqueeze(0).expand(res.shape[0], -1)
+            max_point = torch.tensor(self.bbox[1], device=x.device, dtype=torch.float32)\
+                .unsqueeze(0).expand(res.shape[0], -1)
+            res = torch.maximum(res, min_point)
+            res = torch.minimum(res, max_point)
+            return res
 
 
 class RotationPredictor(nn.Module):
@@ -72,7 +81,7 @@ class Nerflet(nn.Module):
                  in_channels_a=48, in_channels_t=16,
                  predict_label=True, num_classes=127, beta_min=0.03,
                  M=16, dim_latent=128, scale_min=0.05, scale_max=2, disable_ellipsoid=False,
-                 use_spread_out_bias=False):
+                 use_spread_out_bias=False, bbox=None):
         """
         ---Parameters for the original NeRF---
         D: number of layers for density (sigma) encoder
@@ -111,6 +120,7 @@ class Nerflet(nn.Module):
         self.in_channels_xyz = 6 * N_emb_xyz + 3
         self.in_channels_dir = 6 * N_emb_dir + 3
         self.disable_ellipsoid = disable_ellipsoid
+        self.bbox = bbox
 
         # xyz encoding layers
         for i in range(D):
@@ -162,7 +172,9 @@ class Nerflet(nn.Module):
         self.part_label_logits = nn.Embedding(num_embeddings=self.M, embedding_dim=self.num_classes)
 
         # Structure networks (predicting pose of each nerflet)
-        self.translation_predictor = TranslationPredictor(in_channels=dim_latent, use_spread_out_bias=use_spread_out_bias)
+        self.translation_predictor = TranslationPredictor(in_channels=dim_latent,
+                                                          use_spread_out_bias=use_spread_out_bias,
+                                                          bbox=self.bbox)
         self.rotation_predictor = RotationPredictor(in_channels=dim_latent)
         self.scale_predictor = ScalePredictor(in_channels=dim_latent, min_a=scale_min, max_a=scale_max)
 

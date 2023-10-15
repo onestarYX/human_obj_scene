@@ -59,18 +59,21 @@ class NerfletWSystem(LightningModule):
             self.embeddings['t'] = self.embedding_t
             self.models_to_train += [self.embedding_t]
 
+
+        self.models_mm_to_train = []
+        self.eval_only = eval_only
+        self.scene_bbox = None
+        self.init_datasets()
         self.nerflet = Nerflet(N_emb_xyz=hparams.N_emb_xyz, N_emb_dir=hparams.N_emb_dir,
                                encode_a=hparams.encode_a, encode_t=hparams.encode_t,
                                predict_label=hparams.predict_label,
                                num_classes=hparams.num_classes,
                                M=hparams.num_parts, disable_ellipsoid=hparams.disable_ellipsoid,
                                scale_min=hparams.scale_min, scale_max=hparams.scale_max,
-                               use_spread_out_bias=hparams.use_spread_out_bias)
+                               use_spread_out_bias=hparams.use_spread_out_bias,
+                               bbox=self.scene_bbox)
         self.models = {'nerflet': self.nerflet}
         self.models_to_train += [self.models]
-        self.models_mm_to_train = []
-        self.eval_only = eval_only
-        self.init_datasets()
 
         self.near_min = 0.1
         self.appearance_id = None
@@ -88,6 +91,7 @@ class NerfletWSystem(LightningModule):
             self.train_dataset = dataset(split='train' if not self.eval_only else 'val',
                                          img_downscale=self.hparams.img_downscale, **kwargs)
             self.val_dataset = dataset(split='val', img_downscale=self.hparams.img_downscale_val, **kwargs)
+            self.scene_bbox = self.train_dataset.bbox
 
             # if self.is_learning_pose():
             # NOTE(ethan): self.train_dataset.poses is all the poses, even those in the val dataset
