@@ -82,7 +82,7 @@ if __name__ == '__main__':
         kwargs = {'environment_dir': config.environment_dir, 'near_far_version': config.near_far_version, 'val_num': 5,
                   'use_cache': config.use_cache}
         # kwargs['img_downscale'] = args.img_downscale
-        dataset = Sitcom3DDataset(split=args.split, img_downscale=config.img_downscale, **kwargs)
+        dataset = Sitcom3DDataset(split=args.split, img_downscale=config.img_downscale, near=config.near, **kwargs)
     elif config.dataset_name == 'blender':
         kwargs = {}
         dataset = BlenderDataset(root_dir=config.environment_dir,
@@ -176,5 +176,35 @@ if __name__ == '__main__':
         pcd.colors = o3d.utility.Vector3dVector(colors)
         pcd = pcd.voxel_down_sample(voxel_size=0.1)
         geo.append(pcd)
+
+        if hasattr(dataset, 'bbox'):
+            bbox = dataset.bbox
+            mesh_sphere_0 = o3d.geometry.TriangleMesh.create_sphere(radius=0.1)
+            mesh_sphere_0.paint_uniform_color([0.1, 0.1, 0.7])
+            mesh_sphere_0.translate(bbox[0])
+            geo.append(mesh_sphere_0)
+
+            mesh_sphere_1 = o3d.geometry.TriangleMesh.create_sphere(radius=0.1)
+            mesh_sphere_1.paint_uniform_color([0.7, 0.1, 0.1])
+            mesh_sphere_1.translate(bbox[1])
+            geo.append(mesh_sphere_1)
+
+            # mesh_sphere_2 = o3d.geometry.TriangleMesh.create_sphere(radius=0.5)
+            # mesh_sphere_2.paint_uniform_color([0.1, 0.7, 0.1])
+            # geo.append(mesh_sphere_2)
+
+            min_pt = bbox[0]
+            max_pt = bbox[1]
+            bbox_points = [[min_pt[0], min_pt[1], min_pt[2]], [min_pt[0], max_pt[1], min_pt[2]],
+                           [max_pt[0], min_pt[1], min_pt[2]], [max_pt[0], max_pt[1], min_pt[2]],
+                           [min_pt[0], min_pt[1], max_pt[2]], [min_pt[0], max_pt[1], max_pt[2]],
+                           [max_pt[0], min_pt[1], max_pt[2]], [max_pt[0], max_pt[1], max_pt[2]]]
+            lines = [[0, 1], [0, 2], [0, 4], [1, 3], [1, 5], [2, 3], [2, 6], [3, 7], [4, 5], [4, 6], [5, 7], [6, 7]]
+            line_colors = [[0, 1, 0] for i in range(len(lines))]
+            line_set = o3d.geometry.LineSet()
+            line_set.points = o3d.utility.Vector3dVector(bbox_points)
+            line_set.lines = o3d.utility.Vector2iVector(lines)
+            line_set.colors = o3d.utility.Vector3dVector(line_colors)
+            geo.append(line_set)
 
         o3d.visualization.draw_geometries(geo)

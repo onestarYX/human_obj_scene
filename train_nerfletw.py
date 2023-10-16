@@ -89,7 +89,8 @@ class NerfletWSystem(LightningModule):
             kwargs['use_cache'] = self.hparams.use_cache
             kwargs['num_limit'] = self.hparams.num_limit
             self.train_dataset = dataset(split='train' if not self.eval_only else 'val',
-                                         img_downscale=self.hparams.img_downscale, **kwargs)
+                                         img_downscale=self.hparams.img_downscale,
+                                         near=self.hparams.near, **kwargs)
             self.val_dataset = dataset(split='val', img_downscale=self.hparams.img_downscale_val, **kwargs)
             self.scene_bbox = self.train_dataset.bbox
 

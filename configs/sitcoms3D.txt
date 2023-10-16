@@ -12,3 +12,4 @@ optimizer=adam
 lr=5e-4
 lr_scheduler=cosine
 exp_name=default
+near=1

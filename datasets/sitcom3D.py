@@ -301,7 +301,7 @@ class RenderDataset(Dataset):
 
 class Sitcom3DDataset(RenderDataset):
     def __init__(self, environment_dir, split='train', img_downscale=1,
-                 val_num=1, use_cache=False, near_far_version="cam", read_points=True, num_limit=-1):
+                 val_num=1, use_cache=False, near_far_version="cam", read_points=True, num_limit=-1, near=None):
         """
         img_downscale: how much scale to downsample the training images.
                        The original image sizes are around 500~100, so value of 1 or 2
@@ -330,6 +330,7 @@ class Sitcom3DDataset(RenderDataset):
         self.val_num = max(1, val_num)  # at least 1
         self.use_cache = use_cache
         self.near_far_version = near_far_version
+        self.near_overwrite = near
         self.define_transforms()
 
         self.num_limit = num_limit
@@ -356,6 +357,8 @@ class Sitcom3DDataset(RenderDataset):
             ray_mask = torch.ones_like(fars)
         else:
             raise NotImplementedError("")
+        if self.near_overwrite is not None:
+            nears[:] = self.near_overwrite
         return nears, fars, ray_mask
 
     def read_meta(self):
