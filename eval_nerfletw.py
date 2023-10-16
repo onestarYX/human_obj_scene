@@ -233,13 +233,14 @@ if __name__ == '__main__':
         embeddings['t'] = embedding_t
 
     disable_ellipsoid = config.disable_ellipsoid if 'disable_ellipsoid' in config else False
+    bbox = dataset.bbox if hasattr(dataset, 'bbox') else None
     nerflet = Nerflet(N_emb_xyz=config.N_emb_xyz, N_emb_dir=config.N_emb_dir,
                       encode_a=config.encode_a, encode_t=config.encode_t, predict_label=config.predict_label,
                       num_classes=config.num_classes, M=config.num_parts,
                       disable_ellipsoid=disable_ellipsoid,
                       scale_min=config.scale_min, scale_max=config.scale_max,
-                      use_spread_out_bias=config.use_spread_out_bias
-                      ).cuda()
+                      use_spread_out_bias=config.use_spread_out_bias,
+                      bbox=bbox).cuda()
     load_ckpt(nerflet, args.use_ckpt, model_name='nerflet')
     models = {'nerflet': nerflet}
 
