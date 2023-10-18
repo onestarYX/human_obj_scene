@@ -137,6 +137,8 @@ def render_rays(models,
     model = models['nerflet']
     # if test_time:
     #     model.eval()
+    # else:
+    #     model.train()
     pred = get_nerflet_pred(model, embeddings, xyz, rays_d, ts)
 
     '''Rendering. We want:

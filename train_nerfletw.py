@@ -35,6 +35,10 @@ from metrics import psnr
 from utils import load_ckpt
 import json
 
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+
 class NerfletWSystem(LightningModule):
     def __init__(self, hparams, eval_only=False):
         super().__init__()
@@ -47,37 +51,42 @@ class NerfletWSystem(LightningModule):
         self.loss = loss_dict['nerfletw'](weight_coverage_loss=hparams.weight_coverage_loss,
                                           use_mask_loss=hparams.use_mask_loss)
 
-        self.models_to_train = []
-
+        self.models_to_train = {}
         self.embeddings = {}
         if hparams.encode_a:
             self.embedding_a = torch.nn.Embedding(hparams.N_vocab, hparams.N_a)
             self.embeddings['a'] = self.embedding_a
-            self.models_to_train += [self.embedding_a]
+            self.models_to_train['embedding_a'] = self.embedding_a
         if hparams.encode_t:
             self.embedding_t = torch.nn.Embedding(hparams.N_vocab, hparams.N_tau)
             self.embeddings['t'] = self.embedding_t
-            self.models_to_train += [self.embedding_t]
+            self.models_to_train['embedding_t'] = [self.embedding_t]
 
 
         self.models_mm_to_train = []
         self.eval_only = eval_only
         self.scene_bbox = None
         self.init_datasets()
-        self.nerflet = Nerflet(N_emb_xyz=hparams.N_emb_xyz, N_emb_dir=hparams.N_emb_dir,
+        self.nerflet = Nerflet(D=hparams.num_hidden_layers, W=hparams.dim_hidden_layers, skips=hparams.skip_layers,
+                               N_emb_xyz=hparams.N_emb_xyz, N_emb_dir=hparams.N_emb_dir,
                                encode_a=hparams.encode_a, encode_t=hparams.encode_t,
-                               predict_label=hparams.predict_label,
-                               num_classes=hparams.num_classes,
+                               predict_label=hparams.predict_label, num_classes=hparams.num_classes,
                                M=hparams.num_parts, disable_ellipsoid=hparams.disable_ellipsoid,
                                scale_min=hparams.scale_min, scale_max=hparams.scale_max,
-                               use_spread_out_bias=hparams.use_spread_out_bias,
-                               bbox=self.scene_bbox)
+                               use_spread_out_bias=hparams.use_spread_out_bias, bbox=self.scene_bbox,)
         self.models = {'nerflet': self.nerflet}
-        self.models_to_train += [self.models]
+        self.models_to_train.update(self.models)
 
         self.near_min = 0.1
         self.appearance_id = None
         self.height = None
+
+        num_params = 0
+        for model_name, model in self.models_to_train.items():
+            num_model_params = count_parameters(model)
+            print(f"# of params in {model_name}----{num_model_params}")
+            num_params += num_model_params
+        print(f"Number of parameters in total: {num_params}")
 
     def init_datasets(self):
         if self.hparams.dataset_name == 'sitcom3D':
@@ -94,19 +103,19 @@ class NerfletWSystem(LightningModule):
             self.val_dataset = dataset(split='val', img_downscale=self.hparams.img_downscale_val, **kwargs)
             self.scene_bbox = self.train_dataset.bbox
 
-            # if self.is_learning_pose():
-            # NOTE(ethan): self.train_dataset.poses is all the poses, even those in the val dataset
-            train_poses = torch.FloatTensor(self.train_dataset.poses)  # (N, 3, 4)
-            train_poses = torch.cat([train_poses, torch.zeros_like(train_poses[:, 0:1, :])], dim=1)
-            train_poses[:, 3, 3] = 1.0
-            self.learn_f = LearnFocal(len(train_poses), self.hparams.learn_f).cuda()
-            self.learn_p = LearnPose(len(train_poses), self.hparams.learn_r, self.hparams.learn_t,
-                                     init_c2w=train_poses).cuda()
-            self.models_mm = {}
-            self.models_mm["learn_f"] = self.learn_f
-            self.models_mm["learn_p"] = self.learn_p
-            self.models_mm_to_train += [self.learn_f]
-            self.models_mm_to_train += [self.learn_p]
+            # # if self.is_learning_pose():
+            # # NOTE(ethan): self.train_dataset.poses is all the poses, even those in the val dataset
+            # train_poses = torch.FloatTensor(self.train_dataset.poses)  # (N, 3, 4)
+            # train_poses = torch.cat([train_poses, torch.zeros_like(train_poses[:, 0:1, :])], dim=1)
+            # train_poses[:, 3, 3] = 1.0
+            # self.learn_f = LearnFocal(len(train_poses), self.hparams.learn_f).cuda()
+            # self.learn_p = LearnPose(len(train_poses), self.hparams.learn_r, self.hparams.learn_t,
+            #                          init_c2w=train_poses).cuda()
+            # self.models_mm = {}
+            # self.models_mm["learn_f"] = self.learn_f
+            # self.models_mm["learn_p"] = self.learn_p
+            # self.models_mm_to_train += [self.learn_f]
+            # self.models_mm_to_train += [self.learn_p]
         elif self.hparams.dataset_name == 'blender':
             self.train_dataset = BlenderDataset(root_dir=self.hparams.environment_dir,
                                                 img_wh=self.hparams.img_wh, split='train')
@@ -193,18 +202,7 @@ class NerfletWSystem(LightningModule):
 
     def rays_from_batch(self, batch):
         if self.is_learning_pose():
-            directions = batch['directions'].squeeze()
-            ts2 = batch['ts2'].squeeze()
-            f = self.models_mm["learn_f"]()[ts2]
-            cameras, c2w_delta = self.models_mm["learn_p"]()
-            c2w = cameras[ts2]
-            directions_new = directions / f
-            rays_o, rays_d = get_rays_batch_version(directions_new, c2w)
-            # NOTE(ethan): nerfmm won't work when near_far_version == "cam" due to ray near/far computation
-            nears, fars, ray_mask = self.train_dataset.get_nears_fars_from_rays_or_cam(rays_o, rays_d, c2w=None)
-            rays_t = batch['ts'].squeeze().unsqueeze(-1)  # hacky way to get [N, 1]
-            rays = torch.cat([rays_o, rays_d, nears, fars, rays_t], 1)
-            ray_mask = ray_mask.squeeze()
+            raise NotImplementedError
         else:
             rays = batch['rays'].squeeze()
             ray_mask = batch['ray_mask'].squeeze()
@@ -212,7 +210,7 @@ class NerfletWSystem(LightningModule):
 
     def training_step(self, batch, batch_nb):
         rays, ray_mask = self.rays_from_batch(batch)
-        rgbs, ts, gt_labels = batch['rgbs'], batch['ts'], batch['labels']
+        rgbs, ts, gt_labels = batch['rgbs'], batch['ts2'], batch['labels']
         results = self.forward(rays, ts, version="train")
         loss_d = self.loss(results, rgbs, gt_labels, ray_mask,
                            self.hparams.encode_t, self.hparams.predict_label, self.hparams.loss_pos_ray_ratio)
@@ -235,7 +233,7 @@ class NerfletWSystem(LightningModule):
 
     def validation_step(self, batch, batch_nb):
         rays, ray_mask = self.rays_from_batch(batch)
-        rgbs, ts, gt_labels = batch['rgbs'], batch['ts'], batch['labels']
+        rgbs, ts, gt_labels = batch['rgbs'], batch['ts2'], batch['labels']
         rays = rays.squeeze()  # (H*W, 3)
         rgbs = rgbs.squeeze()  # (H*W, 3)
         ts = ts.squeeze()  # (H*W)

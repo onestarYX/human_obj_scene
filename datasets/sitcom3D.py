@@ -291,13 +291,6 @@ class RenderDataset(Dataset):
         xyz = c2w[:3, 3]
         return xyz
 
-    def get_ids(self, version="filtered"):
-        """Choose the version of ids to get.
-        """
-        image_paths = self.dataset_paths[version]
-        ids = [self.image_path_to_id[image_path] for image_path in image_paths]
-        return ids
-
 
 class Sitcom3DDataset(RenderDataset):
     def __init__(self, environment_dir, split='train', img_downscale=1,
@@ -394,6 +387,10 @@ class Sitcom3DDataset(RenderDataset):
         for id_, image_path in self.id_to_image_path.items():
             self.image_path_to_id[image_path] = id_
 
+        self.id_to_idx = {}
+        for idx, id_ in enumerate(self.img_ids):
+            self.id_to_idx[id_] = idx
+
         # Step 2: read and rescale camera intrinsics
         if self.use_cache:
             with open(os.path.join(self.cache_dir, f'Ks.pkl'), 'rb') as f:
@@ -477,27 +474,16 @@ class Sitcom3DDataset(RenderDataset):
                     fars[id_] = np.percentile(xyz_cam_i[:, 2], 99.9)
                 max_far = np.fromiter(fars.values(), np.float32).max()
 
-            print("max_far")
-            print(max_far)
+            print(f"max_far: {max_far}")
             self.scale_factor = max_far / 5  # so that the max far is scaled to 5   #TODO: figure out what this scale_factor is doing
             self.poses[..., 3] /= self.scale_factor
             self.xyz_world /= self.scale_factor
             self.bbox /= self.scale_factor
         self.poses_dict = {id_: self.poses[i] for i, id_ in enumerate(self.img_ids)}
 
-        self.id_to_idx = {}
-        for idx, id_ in enumerate(self.img_ids):
-            self.id_to_idx[id_] = idx
-
         if self.split == 'train':  # create buffer of all rays and rgb data
             if self.use_cache:
                 raise ValueError("Not setup to use cache in training mode.")
-                # all_rays = np.load(os.path.join(self.cache_dir, f'rays{self.img_downscale}.npy'))
-                # self.all_rays = torch.from_numpy(all_rays)
-                # all_directions = np.load(os.path.join(self.cache_dir, f'directions{self.img_downscale}.npy'))
-                # self.all_directions = torch.from_numpy(all_directions)
-                # all_rgbs = np.load(os.path.join(self.cache_dir, f'rgbs{self.img_downscale}.npy'))
-                # self.all_rgbs = torch.from_numpy(all_rgbs)
             else:
                 self.all_rays = []
                 self.all_directions = []
@@ -564,15 +550,6 @@ class Sitcom3DDataset(RenderDataset):
                 self.all_masks = self.all_masks[valid_rays]
                 self.all_labels = self.all_labels[valid_rays]
                 self.all_ray_mask = self.all_ray_mask[valid_rays]
-
-        # if self.split in ['val', 'test_train']:  # use the first image as val image (also in train)
-        #     if self.num_limit != -1:
-        #         self.val_id = 33
-        #     else:
-        #         self.val_id = self.image_path_to_id[self.image_filenames[0]]
-        # else:  # for testing, create a parametric rendering path
-        #     # test poses and appearance index are defined in eval.py
-        #     pass
 
     def define_transforms(self):
         self.transform = T.ToTensor()

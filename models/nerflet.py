@@ -122,6 +122,9 @@ class Nerflet(nn.Module):
         self.disable_ellipsoid = disable_ellipsoid
         self.bbox = bbox
 
+        # Sanity checks
+
+
         # xyz encoding layers
         for i in range(D):
             if i == 0:

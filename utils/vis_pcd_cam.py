@@ -124,7 +124,8 @@ if __name__ == '__main__':
         load_ckpt(embedding_t, ckpt_path, model_name='embedding_t')
         embeddings['t'] = embedding_t
     bbox = dataset.bbox if hasattr(dataset, 'bbox') else None
-    nerflet = Nerflet(N_emb_xyz=config.N_emb_xyz, N_emb_dir=config.N_emb_dir,
+    nerflet = Nerflet(D=config.num_hidden_layers, W=config.dim_hidden_layers, skips=config.skip_layers,
+                      N_emb_xyz=config.N_emb_xyz, N_emb_dir=config.N_emb_dir,
                       encode_a=config.encode_a, encode_t=config.encode_t, predict_label=config.predict_label,
                       num_classes=config.num_classes, M=config.num_parts,
                       disable_ellipsoid=config.disable_ellipsoid,

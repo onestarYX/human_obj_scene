@@ -121,7 +121,9 @@ def render_to_path(path, select_part_idx=None):
         img_pred_[i_check-2:i_check+2, j_check-2:j_check+2] = np.array([255, 0, 0], dtype=np.uint8)
     rgbs = sample['rgbs']
     img_gt = rgbs.view(h, w, 3)
-    psnrs.append(psnr(img_gt, img_pred).item())
+    psnr_ = psnr(img_gt, img_pred).item()
+    print(f"PSNR: {psnr_}")
+    psnrs.append(psnr_)
     img_gt_ = np.clip(img_gt.cpu().numpy(), 0, 1)
     img_gt_ = (img_gt_ * 255).astype(np.uint8)
     rows.append(np.concatenate([img_gt_, img_pred_], axis=1))
@@ -234,13 +236,13 @@ if __name__ == '__main__':
 
     disable_ellipsoid = config.disable_ellipsoid if 'disable_ellipsoid' in config else False
     bbox = dataset.bbox if hasattr(dataset, 'bbox') else None
-    nerflet = Nerflet(N_emb_xyz=config.N_emb_xyz, N_emb_dir=config.N_emb_dir,
+    nerflet = Nerflet(D=config.num_hidden_layers, W=config.dim_hidden_layers, skips=config.skip_layers,
+                      N_emb_xyz=config.N_emb_xyz, N_emb_dir=config.N_emb_dir,
                       encode_a=config.encode_a, encode_t=config.encode_t, predict_label=config.predict_label,
                       num_classes=config.num_classes, M=config.num_parts,
                       disable_ellipsoid=disable_ellipsoid,
                       scale_min=config.scale_min, scale_max=config.scale_max,
-                      use_spread_out_bias=config.use_spread_out_bias,
-                      bbox=bbox).cuda()
+                      use_spread_out_bias=config.use_spread_out_bias, bbox=bbox).cuda()
     load_ckpt(nerflet, args.use_ckpt, model_name='nerflet')
     models = {'nerflet': nerflet}
 
