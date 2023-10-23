@@ -282,31 +282,43 @@ class Nerflet(nn.Module):
         prediction['static_ray_associations'] = ray_associations
 
         '''Get static rgb colors'''
-        # Get transformed directions
-        dir_transformed = self.transform_directions(dir, rotations) # (num_rays, M, 3)
+        num_inside_rays = int(positive_rays.sum())
+        static_rgb_pred = torch.zeros((num_rays, num_pts_per_ray, 3), dtype=torch.float32, device=xyz_.device)
+        if num_inside_rays == 0:
+            prediction['static_rgb'] = static_rgb_pred
+        else:
+            # Get transformed directions
+            dir_transformed = self.transform_directions(dir, rotations) # (num_rays, M, 3)
+            inside_dir_transformed = dir_transformed[positive_rays]    # (num_inside_rays, M, 3)
+            inside_ray_associations = ray_associations[positive_rays]
+            inside_point_feat = point_feat.reshape(num_rays, num_pts_per_ray, self.M, -1)[positive_rays]
+            inside_point_feat = inside_point_feat.reshape(-1, self.M, self.dim_point_feat)
+            num_inside_pts = inside_point_feat.shape[0]
 
-        # Select transformed directions, point features, and texture/shape latents based on ray association
-        dir_select_idx = ray_associations[..., None, None].expand(-1, -1, 3)  # (num_rays, 1, 3)
-        dir_selected = torch.gather(dir_transformed, dim=1, index=dir_select_idx).squeeze()    # (num_rays, 3)
-        pt_feat_select_idx = ray_associations[..., None, None].expand(-1, num_pts_per_ray, self.dim_point_feat).reshape(-1, 1, self.dim_point_feat) # (N, 1, d_pt_feat)
-        pt_feat_selected = torch.gather(point_feat, dim=1, index=pt_feat_select_idx).squeeze()     # (N, W)
-        z_select_idx = ray_associations[..., None, None].expand(-1, num_pts_per_ray, self.dim_latent).reshape(-1, 1, self.dim_latent) # (N, 1, d_latent)
-        z_texture_selected = torch.gather(z_texture_ts.expand(N, -1, -1), dim=1, index=z_select_idx).squeeze()    # (N, d_latent)
-        z_shape_selected = torch.gather(z_shape_ts.expand(N, -1, -1), dim=1, index=z_select_idx).squeeze()
+            # Select transformed directions, point features, and texture/shape latents based on ray association
+            dir_select_idx = inside_ray_associations[..., None, None].expand(-1, -1, 3)  # (num_rays, 1, 3)
+            dir_selected = torch.gather(inside_dir_transformed, dim=1, index=dir_select_idx).squeeze(dim=1)    # (num_rays, 3)
+            pt_feat_select_idx = inside_ray_associations[..., None, None].expand(-1, num_pts_per_ray, self.dim_point_feat).reshape(-1, 1, self.dim_point_feat) # (N, 1, d_pt_feat)
+            pt_feat_selected = torch.gather(inside_point_feat, dim=1, index=pt_feat_select_idx).squeeze(dim=1)     # (N, W)
+            z_select_idx = inside_ray_associations[..., None, None].expand(-1, num_pts_per_ray, self.dim_latent).reshape(-1, 1, self.dim_latent) # (N, 1, d_latent)
+            z_texture_selected = torch.gather(z_texture_ts.expand(num_inside_pts, -1, -1), dim=1, index=z_select_idx).squeeze(dim=1)    # (N, d_latent)
+            z_shape_selected = torch.gather(z_shape_ts.expand(num_inside_pts, -1, -1), dim=1, index=z_select_idx).squeeze(dim=1)
 
-        # Get direction encoding using direction embeddings and point features
-        dir_selected_emb = self.embedding_dir(dir_selected) # (num_rays, d_emb_dir)
-        dir_selected_emb = dir_selected_emb.unsqueeze(1).expand(-1, num_pts_per_ray, -1).reshape(-1, self.in_channels_dir)   # (N, d_emb_dir)
-        dir_selected_encoding = self.dir_encoding(torch.cat((pt_feat_selected, dir_selected_emb), dim=-1))  # (N, W//2)
+            # Get direction encoding using direction embeddings and point features
+            dir_selected_emb = self.embedding_dir(dir_selected) # (num_rays, d_emb_dir)
+            dir_selected_emb = dir_selected_emb.unsqueeze(1).expand(-1, num_pts_per_ray, -1).reshape(-1, self.in_channels_dir)   # (N, d_emb_dir)
+            dir_selected_encoding = self.dir_encoding(torch.cat((pt_feat_selected, dir_selected_emb), dim=-1))  # (N, W//2)
 
-        # Predict static rgb
-        static_rgb_inputs = torch.cat((z_texture_selected, z_shape_selected), dim=-1)   # (N, 2 * dim_latent)
-        static_rgb_inputs = torch.cat((static_rgb_inputs, dir_selected_encoding), dim=-1)   # (N, 2*dim_latent + W//2)
-        if self.encode_a:
-            a_emb_ = a_emb.unsqueeze(1).expand(-1, num_pts_per_ray, -1).reshape(-1, self.in_channels_a) # (N, dim_a_emb)
-            static_rgb_inputs = torch.cat((static_rgb_inputs, a_emb_), dim=-1)
-        static_rgb_pred = self.static_rgb(static_rgb_inputs)
-        prediction['static_rgb'] = static_rgb_pred.reshape(num_rays, num_pts_per_ray, -1)
+            # Predict static rgb
+            static_rgb_inputs = torch.cat((z_texture_selected, z_shape_selected), dim=-1)   # (N, 2 * dim_latent)
+            static_rgb_inputs = torch.cat((static_rgb_inputs, dir_selected_encoding), dim=-1)   # (N, 2*dim_latent + W//2)
+            if self.encode_a:
+                a_emb_ = a_emb[positive_rays].unsqueeze(1).expand(-1, num_pts_per_ray, -1).reshape(-1, self.in_channels_a) # (N, dim_a_emb)
+                static_rgb_inputs = torch.cat((static_rgb_inputs, a_emb_), dim=-1)
+            inside_static_rgb_pred = self.static_rgb(static_rgb_inputs)
+            inside_static_rgb_pred = inside_static_rgb_pred.reshape(num_inside_rays, num_pts_per_ray, -1)
+            static_rgb_pred[positive_rays] = inside_static_rgb_pred
+            prediction['static_rgb'] = static_rgb_pred.reshape(num_rays, num_pts_per_ray, -1)
 
         '''Get static semantics'''
         if self.predict_label:

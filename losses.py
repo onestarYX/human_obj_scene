@@ -122,7 +122,12 @@ class NerfletWLoss(nn.Module):
                 label_pred = pred['combined_label']
             else:
                 label_pred = pred['static_label']
-            ret['label_cce'] = torch.nn.functional.cross_entropy(label_pred, gt_labels.to(torch.long))
+            inside_rays_mask = pred['static_positive_rays']
+            if inside_rays_mask.sum() == 0:
+                ret['label_cce'] = torch.tensor(0, device=label_pred.device)
+            else:
+                ret['label_cce'] = torch.nn.functional.cross_entropy(label_pred[inside_rays_mask],
+                                                                     gt_labels[inside_rays_mask].to(torch.long))
 
         # Mask loss
         if self.use_mask_loss:
