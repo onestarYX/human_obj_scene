@@ -70,7 +70,7 @@ class NerfletWLoss(nn.Module):
     """
 
     def __init__(self, lambda_u=0.01, min_num_rays_per_part=32, max_hitting_parts_per_ray=3,
-                 weight_coverage_loss=0.01, use_mask_loss=True):
+                 weight_coverage_loss=0.01, use_mask_loss=True, label_only=False):
         """
         lambda_u: in equation 13
         """
@@ -93,6 +93,7 @@ class NerfletWLoss(nn.Module):
             # 'overlap_loss': 1
         }
         self.use_mask_loss = use_mask_loss
+        self.label_only = label_only
 
     def forward(self, pred, gt_rgbs, gt_labels, ray_mask, encode_t=True, predict_label=True, loss_pos_ray_ratio=1):
         if loss_pos_ray_ratio != 1:
@@ -110,6 +111,16 @@ class NerfletWLoss(nn.Module):
 
         ray_mask_sum = ray_mask.sum() + 1e-20
         ret = {}
+        if self.label_only:
+            label_pred = pred['static_label']
+            inside_rays_mask = pred['static_positive_rays']
+            if inside_rays_mask.sum() == 0:
+                ret['label_cce'] = torch.nn.functional.cross_entropy(label_pred, gt_labels.to(torch.long))
+            else:
+                ret['label_cce'] = torch.nn.functional.cross_entropy(label_pred[inside_rays_mask],
+                                                                     gt_labels[inside_rays_mask].to(torch.long))
+            return ret
+
         if encode_t:
             ret['color_l'] = (((pred['combined_rgb_map'] - gt_rgbs) ** 2 / (2 * pred['beta'].unsqueeze(1) ** 2)) * ray_mask[:, None]).sum() / ray_mask_sum
             ret['beta_l'] = 3 + (torch.log(pred['beta']) * ray_mask).sum() / ray_mask_sum  # TODO: what's the difference between this line here and the paper eqn?

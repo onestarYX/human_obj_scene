@@ -248,6 +248,7 @@ def get_parser():
     parser.add_argument('--num_hidden_layers', type=int, default=8)
     parser.add_argument('--skip_layers', type=int, nargs='*', default=[4])
     parser.add_argument('--dim_hidden_layers', type=int, default=256)
+    parser.add_argument('--label_only', action='store_true', default=False)
 
     return parser
 

@@ -81,7 +81,7 @@ class Nerflet(nn.Module):
                  in_channels_a=48, in_channels_t=16,
                  predict_label=True, num_classes=127, beta_min=0.03,
                  M=16, dim_latent=128, scale_min=0.05, scale_max=2, disable_ellipsoid=False,
-                 use_spread_out_bias=False, bbox=None):
+                 use_spread_out_bias=False, bbox=None, label_only=False):
         """
         ---Parameters for the original NeRF---
         D: number of layers for density (sigma) encoder
@@ -121,6 +121,7 @@ class Nerflet(nn.Module):
         self.in_channels_dir = 6 * N_emb_dir + 3
         self.disable_ellipsoid = disable_ellipsoid
         self.bbox = bbox
+        self.label_only = label_only
 
         # Sanity checks
 
@@ -284,7 +285,7 @@ class Nerflet(nn.Module):
         '''Get static rgb colors'''
         num_inside_rays = int(positive_rays.sum())
         static_rgb_pred = torch.zeros((num_rays, num_pts_per_ray, 3), dtype=torch.float32, device=xyz_.device)
-        if num_inside_rays == 0:
+        if num_inside_rays == 0 or self.label_only:
             prediction['static_rgb'] = static_rgb_pred
         else:
             # Get transformed directions

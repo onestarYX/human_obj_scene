@@ -49,7 +49,7 @@ class NerfletWSystem(LightningModule):
         if 'use_mask_loss' in hparams:
             use_mask_loss = hparams.use_mask_loss
         self.loss = loss_dict['nerfletw'](weight_coverage_loss=hparams.weight_coverage_loss,
-                                          use_mask_loss=hparams.use_mask_loss)
+                                          use_mask_loss=hparams.use_mask_loss, label_only=hparams.label_only)
 
         self.models_to_train = {}
         self.embeddings = {}
@@ -73,7 +73,8 @@ class NerfletWSystem(LightningModule):
                                predict_label=hparams.predict_label, num_classes=hparams.num_classes,
                                M=hparams.num_parts, disable_ellipsoid=hparams.disable_ellipsoid,
                                scale_min=hparams.scale_min, scale_max=hparams.scale_max,
-                               use_spread_out_bias=hparams.use_spread_out_bias, bbox=self.scene_bbox,)
+                               use_spread_out_bias=hparams.use_spread_out_bias, bbox=self.scene_bbox,
+                               label_only=hparams.label_only)
         self.models = {'nerflet': self.nerflet}
         self.models_to_train.update(self.models)
 
