@@ -131,7 +131,7 @@ if __name__ == '__main__':
                       disable_ellipsoid=config.disable_ellipsoid,
                       scale_min=config.scale_min, scale_max=config.scale_max,
                       use_spread_out_bias=config.use_spread_out_bias,
-                      bbox=bbox).cuda()
+                      bbox=bbox, label_only=config.label_only).cuda()
     load_ckpt(nerflet, ckpt_path, model_name='nerflet')
 
     # Prepare colors for each part

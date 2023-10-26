@@ -60,7 +60,7 @@ class NerfletWSystem(LightningModule):
         if hparams.encode_t:
             self.embedding_t = torch.nn.Embedding(hparams.N_vocab, hparams.N_tau)
             self.embeddings['t'] = self.embedding_t
-            self.models_to_train['embedding_t'] = [self.embedding_t]
+            self.models_to_train['embedding_t'] = self.embedding_t
 
 
         self.models_mm_to_train = []
