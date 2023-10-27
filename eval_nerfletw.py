@@ -243,7 +243,7 @@ if __name__ == '__main__':
                       disable_ellipsoid=disable_ellipsoid,
                       scale_min=config.scale_min, scale_max=config.scale_max,
                       use_spread_out_bias=config.use_spread_out_bias, bbox=bbox,
-                      label_only=config.label_only).cuda()
+                      label_only=config.label_only, disable_tf=config.disable_tf).cuda()
     load_ckpt(nerflet, args.use_ckpt, model_name='nerflet')
     models = {'nerflet': nerflet}
 

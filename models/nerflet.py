@@ -81,7 +81,7 @@ class Nerflet(nn.Module):
                  in_channels_a=48, in_channels_t=16,
                  predict_label=True, num_classes=127, beta_min=0.03,
                  M=16, dim_latent=128, scale_min=0.05, scale_max=2, disable_ellipsoid=False,
-                 use_spread_out_bias=False, bbox=None, label_only=False):
+                 use_spread_out_bias=False, bbox=None, label_only=False, disable_tf=False):
         """
         ---Parameters for the original NeRF---
         D: number of layers for density (sigma) encoder
@@ -122,7 +122,7 @@ class Nerflet(nn.Module):
         self.disable_ellipsoid = disable_ellipsoid
         self.bbox = bbox
         self.label_only = label_only
-
+        self.disable_tf = disable_tf
         # Sanity checks
 
 
@@ -217,7 +217,10 @@ class Nerflet(nn.Module):
         # Perform transformation
         num_rays, num_pts_per_ray, _ = pts.shape
         pts = pts.reshape(-1, 3)
-        xyz_ = self.transform_points(pts, translations, rotations)      # (N, M, 3)
+        if self.disable_tf:
+            xyz_ = pts.unsqueeze(1).expand(-1, self.M, -1)
+        else:
+            xyz_ = self.transform_points(pts, translations, rotations)      # (N, M, 3)
         N = xyz_.shape[0]
         if self.disable_ellipsoid:
             ellipsoid_occ = torch.ones(N, self.M, device=xyz_.device)
