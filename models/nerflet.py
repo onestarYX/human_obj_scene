@@ -292,7 +292,10 @@ class Nerflet(nn.Module):
             prediction['static_rgb'] = static_rgb_pred
         else:
             # Get transformed directions
-            dir_transformed = self.transform_directions(dir, rotations) # (num_rays, M, 3)
+            if self.disable_tf:
+                dir_transformed = dir
+            else:
+                dir_transformed = self.transform_directions(dir, rotations) # (num_rays, M, 3)
             inside_dir_transformed = dir_transformed[positive_rays]    # (num_inside_rays, M, 3)
             inside_ray_associations = ray_associations[positive_rays]
             inside_point_feat = point_feat.reshape(num_rays, num_pts_per_ray, self.M, -1)[positive_rays]
