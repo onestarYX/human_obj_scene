@@ -235,6 +235,7 @@ if __name__ == '__main__':
         embeddings['t'] = embedding_t
 
     disable_ellipsoid = config.disable_ellipsoid if 'disable_ellipsoid' in config else False
+    disable_tf = config.disable_tf if 'disable_tf' in config else False
     bbox = dataset.bbox if hasattr(dataset, 'bbox') else None
     nerflet = Nerflet(D=config.num_hidden_layers, W=config.dim_hidden_layers, skips=config.skip_layers,
                       N_emb_xyz=config.N_emb_xyz, N_emb_dir=config.N_emb_dir,
@@ -243,7 +244,7 @@ if __name__ == '__main__':
                       disable_ellipsoid=disable_ellipsoid,
                       scale_min=config.scale_min, scale_max=config.scale_max,
                       use_spread_out_bias=config.use_spread_out_bias, bbox=bbox,
-                      label_only=config.label_only, disable_tf=config.disable_tf).cuda()
+                      label_only=config.label_only, disable_tf=disable_tf).cuda()
     load_ckpt(nerflet, args.use_ckpt, model_name='nerflet')
     models = {'nerflet': nerflet}
 
