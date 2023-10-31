@@ -103,20 +103,6 @@ class NerfletWSystem(LightningModule):
                                          near=self.hparams.near, **kwargs)
             self.val_dataset = dataset(split='val', img_downscale=self.hparams.img_downscale_val, **kwargs)
             self.scene_bbox = self.train_dataset.bbox
-
-            # # if self.is_learning_pose():
-            # # NOTE(ethan): self.train_dataset.poses is all the poses, even those in the val dataset
-            # train_poses = torch.FloatTensor(self.train_dataset.poses)  # (N, 3, 4)
-            # train_poses = torch.cat([train_poses, torch.zeros_like(train_poses[:, 0:1, :])], dim=1)
-            # train_poses[:, 3, 3] = 1.0
-            # self.learn_f = LearnFocal(len(train_poses), self.hparams.learn_f).cuda()
-            # self.learn_p = LearnPose(len(train_poses), self.hparams.learn_r, self.hparams.learn_t,
-            #                          init_c2w=train_poses).cuda()
-            # self.models_mm = {}
-            # self.models_mm["learn_f"] = self.learn_f
-            # self.models_mm["learn_p"] = self.learn_p
-            # self.models_mm_to_train += [self.learn_f]
-            # self.models_mm_to_train += [self.learn_p]
         elif self.hparams.dataset_name == 'blender':
             self.train_dataset = BlenderDataset(root_dir=self.hparams.environment_dir,
                                                 img_wh=self.hparams.img_wh, split='train')
@@ -211,7 +197,11 @@ class NerfletWSystem(LightningModule):
 
     def training_step(self, batch, batch_nb):
         rays, ray_mask = self.rays_from_batch(batch)
-        rgbs, ts, gt_labels = batch['rgbs'], batch['ts2'], batch['labels']
+        if 'ts2' in batch:
+            ts = batch['ts2']
+        else:
+            ts = batch['ts']
+        rgbs, gt_labels = batch['rgbs'], batch['labels']
         results = self.forward(rays, ts, version="train")
         loss_d = self.loss(results, rgbs, gt_labels, ray_mask,
                            self.hparams.encode_t, self.hparams.predict_label, self.hparams.loss_pos_ray_ratio)
@@ -234,7 +224,11 @@ class NerfletWSystem(LightningModule):
 
     def validation_step(self, batch, batch_nb):
         rays, ray_mask = self.rays_from_batch(batch)
-        rgbs, ts, gt_labels = batch['rgbs'], batch['ts2'], batch['labels']
+        if 'ts2' in batch:
+            ts = batch['ts2']
+        else:
+            ts = batch['ts']
+        rgbs, gt_labels = batch['rgbs'], batch['labels']
         rays = rays.squeeze()  # (H*W, 3)
         rgbs = rgbs.squeeze()  # (H*W, 3)
         ts = ts.squeeze()  # (H*W)

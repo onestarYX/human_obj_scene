@@ -29,7 +29,7 @@ class TranslationPredictor(nn.Module):
                 .unsqueeze(0).expand(res.shape[0], -1)
             res = torch.maximum(res, min_point)
             res = torch.minimum(res, max_point)
-            return res
+        return res
 
 
 class RotationPredictor(nn.Module):
