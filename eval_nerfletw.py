@@ -91,7 +91,10 @@ def compute_iou(pred, gt, num_cls):
 def render_to_path(path, select_part_idx=None):
     sample = dataset[i]
     rays = sample['rays']
-    ts = sample['ts']
+    if 'ts2' in sample:
+        ts = sample['ts2']
+    else:
+        ts = sample['ts']
     results = batched_inference(models, embeddings, rays.cuda(), ts.cuda(),
                                 config.predict_label, config.num_classes,
                                 config.N_samples, config.N_importance, config.use_disp,
@@ -237,6 +240,7 @@ if __name__ == '__main__':
     disable_ellipsoid = config.disable_ellipsoid if 'disable_ellipsoid' in config else False
     disable_tf = config.disable_tf if 'disable_tf' in config else False
     bbox = dataset.bbox if hasattr(dataset, 'bbox') else None
+    sharpness = config.sharpness if 'sharpness' in config else 100
     nerflet = Nerflet(D=config.num_hidden_layers, W=config.dim_hidden_layers, skips=config.skip_layers,
                       N_emb_xyz=config.N_emb_xyz, N_emb_dir=config.N_emb_dir,
                       encode_a=config.encode_a, encode_t=config.encode_t, predict_label=config.predict_label,
@@ -244,7 +248,8 @@ if __name__ == '__main__':
                       disable_ellipsoid=disable_ellipsoid,
                       scale_min=config.scale_min, scale_max=config.scale_max,
                       use_spread_out_bias=config.use_spread_out_bias, bbox=bbox,
-                      label_only=config.label_only, disable_tf=disable_tf).cuda()
+                      label_only=config.label_only, disable_tf=disable_tf,
+                      sharpness=sharpness).cuda()
     load_ckpt(nerflet, args.use_ckpt, model_name='nerflet')
     models = {'nerflet': nerflet}
 

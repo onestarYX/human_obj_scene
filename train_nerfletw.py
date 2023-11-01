@@ -74,7 +74,8 @@ class NerfletWSystem(LightningModule):
                                M=hparams.num_parts, disable_ellipsoid=hparams.disable_ellipsoid,
                                scale_min=hparams.scale_min, scale_max=hparams.scale_max,
                                use_spread_out_bias=hparams.use_spread_out_bias, bbox=self.scene_bbox,
-                               label_only=hparams.label_only, disable_tf=hparams.disable_tf)
+                               label_only=hparams.label_only, disable_tf=hparams.disable_tf,
+                               sharpness=hparams.sharpness)
         self.models = {'nerflet': self.nerflet}
         self.models_to_train.update(self.models)
 

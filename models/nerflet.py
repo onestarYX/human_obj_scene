@@ -81,7 +81,8 @@ class Nerflet(nn.Module):
                  in_channels_a=48, in_channels_t=16,
                  predict_label=True, num_classes=127, beta_min=0.03,
                  M=16, dim_latent=128, scale_min=0.05, scale_max=2, disable_ellipsoid=False,
-                 use_spread_out_bias=False, bbox=None, label_only=False, disable_tf=False):
+                 use_spread_out_bias=False, bbox=None, label_only=False, disable_tf=False,
+                 sharpness=100):
         """
         ---Parameters for the original NeRF---
         D: number of layers for density (sigma) encoder
@@ -123,6 +124,7 @@ class Nerflet(nn.Module):
         self.bbox = bbox
         self.label_only = label_only
         self.disable_tf = disable_tf
+        self.sharpness = sharpness
         # Sanity checks
 
 
@@ -229,7 +231,8 @@ class Nerflet(nn.Module):
             # Get per-part nerflet ellipsoid distances (||diag(scale^-1) * point||^2)
             ellipoid_dist = self.compute_point_ellipsoid_dist(xyz_, scales)     # (N, M)
             # Get ellipsoid occupancy (eqn 6 in the paper PartNeRF)
-            ellipsoid_occ = self.apply_sigmoid_with_sharpness(1 - ellipoid_dist)
+            ellipsoid_occ = self.apply_sigmoid_with_sharpness(1 - ellipoid_dist,
+                                                              sharpness_in=self.sharpness, sharpness_out=self.sharpness)
             points_in_mask = ellipoid_dist <= 1
 
         '''Get static occupancy, pointwise features, and ellipsoid occupancy'''
@@ -268,7 +271,8 @@ class Nerflet(nn.Module):
                     static_occ[true_idx, i] = static_occ_pred[range(num_inds), i]
                     point_feat[true_idx, i, :] = static_pt_feat[range(num_inds), i, :]
 
-        static_occ = self.apply_sigmoid_with_sharpness(static_occ)
+        # TODO: replace this with sigmoid.
+        static_occ = torch.nn.functional.sigmoid(static_occ)
         # Multiply the occupancy of ellipsoid with predicted sigma
         static_occ = ellipsoid_occ * static_occ
 
