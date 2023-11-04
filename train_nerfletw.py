@@ -75,7 +75,7 @@ class NerfletWSystem(LightningModule):
                                scale_min=hparams.scale_min, scale_max=hparams.scale_max,
                                use_spread_out_bias=hparams.use_spread_out_bias, bbox=self.scene_bbox,
                                label_only=hparams.label_only, disable_tf=hparams.disable_tf,
-                               sharpness=hparams.sharpness)
+                               sharpness=hparams.sharpness, predict_density=hparams.predict_density)
         self.models = {'nerflet': self.nerflet}
         self.models_to_train.update(self.models)
 
@@ -156,6 +156,7 @@ class NerfletWSystem(LightningModule):
                             self.hparams.N_importance,
                             self.hparams.chunk,  # chunk size is effective in val mode
                             self.train_dataset.white_back,
+                            predict_density=self.hparams.predict_density,
                             test_time=version == "val")
 
             for k, v in rendered_ray_chunks.items():

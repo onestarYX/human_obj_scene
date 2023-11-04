@@ -110,6 +110,7 @@ def render_rays(models,
                 N_importance=0,
                 chunk=1024 * 32,
                 white_back=False,
+                predict_density=False,
                 test_time=False,
                 **kwargs
                 ):
@@ -149,7 +150,18 @@ def render_rays(models,
     encode_t = model.encode_t
     results = {}
     # Retrieve values
-    static_occ = pred['static_occ']
+    if predict_density:
+        # TODO: Might consider just using associated parts to determine occupancy. Here using max to stabilize training
+        static_density = pred['static_occ']
+        deltas = z_vals[:, 1:] - z_vals[:, :-1]  # (N_rays, N_samples_-1)
+        delta_inf = 1e2 * torch.ones_like(deltas[:, :1])  # (N_rays, 1) the last delta is infinity
+        deltas = torch.cat([deltas, delta_inf], -1)  # (N_rays, N_samples_)
+        deltas = deltas.unsqueeze(-1).expand(-1, -1, model.M)
+        noise = torch.randn_like(static_density)
+        static_occ = 1 - torch.exp(-deltas * torch.relu(static_density + noise))
+    else:
+        static_occ = pred['static_occ']
+
     static_rgb = pred['static_rgb']
     static_ray_associations = pred['static_ray_associations']
     positive_rays = pred['static_positive_rays']

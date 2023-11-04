@@ -251,6 +251,7 @@ def get_parser():
     parser.add_argument('--label_only', action='store_true', default=False)
     parser.add_argument('--disable_tf', action='store_true', default=False)
     parser.add_argument('--sharpness', type=float, default=100)
+    parser.add_argument('--predict_density', action='store_true', default=False)
 
     return parser
 

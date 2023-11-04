@@ -82,7 +82,7 @@ class Nerflet(nn.Module):
                  predict_label=True, num_classes=127, beta_min=0.03,
                  M=16, dim_latent=128, scale_min=0.05, scale_max=2, disable_ellipsoid=False,
                  use_spread_out_bias=False, bbox=None, label_only=False, disable_tf=False,
-                 sharpness=100):
+                 sharpness=100, predict_density=False):
         """
         ---Parameters for the original NeRF---
         D: number of layers for density (sigma) encoder
@@ -125,6 +125,7 @@ class Nerflet(nn.Module):
         self.label_only = label_only
         self.disable_tf = disable_tf
         self.sharpness = sharpness
+        self.predict_density = predict_density
         # Sanity checks
 
 
@@ -271,10 +272,12 @@ class Nerflet(nn.Module):
                     static_occ[true_idx, i] = static_occ_pred[range(num_inds), i]
                     point_feat[true_idx, i, :] = static_pt_feat[range(num_inds), i, :]
 
-        # TODO: replace this with sigmoid.
-        static_occ = torch.nn.functional.sigmoid(static_occ)
-        # Multiply the occupancy of ellipsoid with predicted sigma
-        static_occ = ellipsoid_occ * static_occ
+        if self.predict_density:
+            static_occ = torch.nn.functional.softplus(static_occ)
+        else:
+            static_occ = torch.nn.functional.sigmoid(static_occ)
+            # Multiply the occupancy of ellipsoid with predicted sigma
+            static_occ = ellipsoid_occ * static_occ
 
         # TODO: think about what's more to add or remove
         prediction['static_ellipsoid_occ'] = ellipsoid_occ.reshape(num_rays, num_pts_per_ray, -1)
@@ -284,8 +287,12 @@ class Nerflet(nn.Module):
         # prediction['static_points_in_mask'] = points_in_mask.reshape(num_rays, num_pts_per_ray, -1)
 
         '''Get ray association'''
-        positive_rays, ray_associations = self.ray_associator(
-            static_occ.reshape(num_rays, num_pts_per_ray, self.M))
+        if self.predict_density:
+            positive_rays = torch.ones(num_rays, dtype=torch.bool, device=xyz_.device)
+            ray_associations = torch.zeros(num_rays, dtype=torch.int64, device=xyz_.device)
+        else:
+            positive_rays, ray_associations = self.ray_associator(
+                static_occ.reshape(num_rays, num_pts_per_ray, self.M))
         prediction['static_positive_rays'] = positive_rays
         prediction['static_ray_associations'] = ray_associations
 

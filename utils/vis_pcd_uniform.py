@@ -116,14 +116,15 @@ if __name__ == '__main__':
             load_ckpt(embedding_t, ckpt_path, model_name='embedding_t')
             embeddings['t'] = embedding_t
         bbox = dataset.bbox if hasattr(dataset, 'bbox') else None
+        sharpness = config.sharpness if 'sharpness' in config else 100
         nerflet = Nerflet(N_emb_xyz=config.N_emb_xyz, N_emb_dir=config.N_emb_dir,
                           encode_a=config.encode_a, encode_t=config.encode_t, predict_label=config.predict_label,
                           num_classes=config.num_classes, M=config.num_parts,
                           disable_ellipsoid=config.disable_ellipsoid,
                           scale_min=config.scale_min, scale_max=config.scale_max,
                           use_spread_out_bias=config.use_spread_out_bias,
-                          bbox=bbox, label_only=config.label_only, disable_tf=config.disable_tf
-                          ).cuda()
+                          bbox=bbox, label_only=config.label_only, disable_tf=config.disable_tf,
+                          sharpness=sharpness).cuda()
         load_ckpt(nerflet, ckpt_path, model_name='nerflet')
 
         # Uniformly sample points in the 3D space and make inference
