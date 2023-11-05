@@ -240,7 +240,10 @@ class Nerflet(nn.Module):
         # Parallelization by batching over the part dimension for occupancy calculation
         num_points_inside_ellipsoid = points_in_mask.sum(dim=0)
         max_points_inside_ellipsoid = num_points_inside_ellipsoid.max().item()
-        static_occ = torch.zeros((N, self.M), device=xyz_.device) - 100  # -100 to make sure sigmoid is 0
+        if self.predict_density:
+            static_occ = torch.zeros((N, self.M), device=xyz_.device)
+        else:
+            static_occ = torch.zeros((N, self.M), device=xyz_.device) - 100  # -100 to make sure sigmoid is 0
         point_feat = torch.zeros((N, self.M, self.dim_point_feat), device=xyz_.device)
         if max_points_inside_ellipsoid != 0:
             # Keep only the points that are inside the ellipsoid in a batched way (batch over M)
@@ -273,7 +276,7 @@ class Nerflet(nn.Module):
                     point_feat[true_idx, i, :] = static_pt_feat[range(num_inds), i, :]
 
         if self.predict_density:
-            static_occ = torch.nn.functional.softplus(static_occ)
+            static_occ = torch.nn.functional.sigmoid(static_occ)
         else:
             static_occ = torch.nn.functional.sigmoid(static_occ)
             # Multiply the occupancy of ellipsoid with predicted sigma

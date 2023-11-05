@@ -38,7 +38,7 @@ def inference_pts_occ(model, embeddings, xyz, chunk):
         rays_d[:, 0, 0] = 1
         ts = torch.zeros(len(xyz_)).to(torch.int32).to(xyz.device)
         pred = get_nerflet_pred(model, embeddings, xyz_, rays_d, ts)
-        occ_list.append(pred['static_occ'].cpu())
+        occ_list.append(pred['static_occ'])
 
     occ_list = torch.cat(occ_list, dim=0)
     return occ_list
@@ -133,7 +133,7 @@ if __name__ == '__main__':
                       scale_min=config.scale_min, scale_max=config.scale_max,
                       use_spread_out_bias=config.use_spread_out_bias,
                       bbox=bbox, label_only=config.label_only, disable_tf=config.disable_tf,
-                      sharpness=sharpness).cuda()
+                      sharpness=sharpness, predict_density=config.predict_density).cuda()
     load_ckpt(nerflet, ckpt_path, model_name='nerflet')
 
     # Prepare colors for each part
@@ -145,12 +145,22 @@ if __name__ == '__main__':
         print(f"Checking image {i}")
         sample = dataset[i]
         rays = sample['rays']
-        xyz, _, _ = get_input_from_rays(rays, config.N_samples, config.use_disp)
+        xyz, rays_d, z_vals = get_input_from_rays(rays, config.N_samples, config.use_disp)
         xyz = xyz.cuda()
+        z_vals = z_vals.cuda()
         results = inference_pts_occ(nerflet, embeddings, xyz, config.chunk)
+        if config.predict_density:
+            static_density = results
+            # TODO: this delta shouldn't be using cam's z_vals because we are in the local nerf coordinate?
+            deltas = z_vals[:, 1:] - z_vals[:, :-1]  # (N_rays, N_samples_-1)
+            delta_inf = 1e2 * torch.ones_like(deltas[:, :1])  # (N_rays, 1) the last delta is infinity
+            deltas = torch.cat([deltas, delta_inf], -1)  # (N_rays, N_samples_)
+            deltas = deltas.unsqueeze(-1).expand(-1, -1, nerflet.M)
+            noise = torch.randn_like(static_density, device=deltas.device)
+            results = 1 - torch.exp(-deltas * torch.relu(static_density + noise))
 
         xyz = xyz.reshape(-1, 3).cpu()
-        results = results.reshape(-1, config.num_parts)
+        results = results.reshape(-1, config.num_parts).cpu()
 
         geo = []
         occ_threshold = 0.5

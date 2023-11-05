@@ -137,6 +137,15 @@ if __name__ == '__main__':
         xyz = torch.cartesian_prod(xs, ys, zs)
         xyz = xyz.reshape(-1, N_samples, 3).cuda()
         results = inference_pts_occ(nerflet, embeddings, xyz, config.chunk)
+        if config.predict_density:
+            static_density = results
+            # TODO: this delta shouldn't be using cam's z_vals because we are in the local nerf coordinate?
+            deltas = z_vals[:, 1:] - z_vals[:, :-1]  # (N_rays, N_samples_-1)
+            delta_inf = 1e2 * torch.ones_like(deltas[:, :1])  # (N_rays, 1) the last delta is infinity
+            deltas = torch.cat([deltas, delta_inf], -1)  # (N_rays, N_samples_)
+            deltas = deltas.unsqueeze(-1).expand(-1, -1, nerflet.M)
+            noise = torch.randn_like(static_density, device=deltas.device)
+            results = 1 - torch.exp(-deltas * torch.relu(static_density + noise))
 
         xyz = xyz.reshape(-1, 3).cpu()
         results = results.reshape(-1, config.num_parts)
