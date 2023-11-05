@@ -39,7 +39,7 @@ from omegaconf import OmegaConf
 @torch.no_grad()
 def batched_inference(models, embeddings,
                       rays, ts, predict_label, num_classes, N_samples, N_importance, use_disp,
-                      chunk, white_back, **kwargs):
+                      chunk, white_back, predict_density, **kwargs):
     """Do batched inference on rays using chunk."""
     B = rays.shape[0]
     results = defaultdict(list)
@@ -62,6 +62,7 @@ def batched_inference(models, embeddings,
                         N_importance,
                         chunk,
                         white_back,
+                        predict_density=predict_density,
                         test_time=True,
                         offset=offset,
                         check_pixel_log=check_pixel_log,
@@ -98,7 +99,7 @@ def render_to_path(path, select_part_idx=None):
     results = batched_inference(models, embeddings, rays.cuda(), ts.cuda(),
                                 config.predict_label, config.num_classes,
                                 config.N_samples, config.N_importance, config.use_disp,
-                                config.chunk, dataset.white_back)
+                                config.chunk, dataset.white_back, config.predict_density)
 
     rows = []
 
@@ -249,7 +250,7 @@ if __name__ == '__main__':
                       scale_min=config.scale_min, scale_max=config.scale_max,
                       use_spread_out_bias=config.use_spread_out_bias, bbox=bbox,
                       label_only=config.label_only, disable_tf=disable_tf,
-                      sharpness=sharpness).cuda()
+                      sharpness=sharpness, predict_density=config.predict_density).cuda()
     load_ckpt(nerflet, args.use_ckpt, model_name='nerflet')
     models = {'nerflet': nerflet}
 

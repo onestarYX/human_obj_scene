@@ -464,80 +464,24 @@ class NeRFSystem(LightningModule):
         self.log('val/loss', mean_loss)
         self.log('val/psnr', mean_psnr, prog_bar=True)
 
-    # def test_step(self, batch, batch_idx):
-    #     """Run inference on an image. Uses batches
-    #     from TrajectoryDataset.
-    #     """
-    #
-    #     batch_size = batch["c2w"].shape[0]
-    #     for b in range(batch_size):
-    #         trajectory_name = batch["trajectory_name"][b]
-    #         folder = batch["folder"][b]
-    #         image_idx = batch["idx"][b]
-    #         near_min = batch["near_min"][b].float()
-    #         filename = os.path.join(folder, trajectory_name, "images/{:06d}.png".format(image_idx))
-    #         if os.path.exists(filename):
-    #             print(f"skipping {filename}")
-    #             continue
-    #         else:
-    #             print(f"NOT skipping {filename}")
-    #
-    #         c2w = batch["c2w"][b][:3, :].float()
-    #         K = batch["K"][b].float()
-    #
-    #         H, W = round(K[1, 2].item() * 2.0), round(K[0, 2].item() * 2.0)
-    #         if self.height is not None:
-    #             scalar = (self.height / (K[1, 2] * 2.0))
-    #             K[:2] *= scalar
-    #
-    #         id_ = self.train_dataset.img_ids[0]
-    #         if self.appearance_id is None:
-    #             a_embedded = torch.zeros_like(self.embedding_a(torch.tensor(id_).to(c2w.device)))
-    #         else:
-    #             a_embedded = self.embedding_a(torch.tensor(self.appearance_id).to(c2w.device))
-    #         t_embedded = torch.zeros_like(self.embedding_t(torch.tensor(id_).to(c2w.device)))
-    #
-    #         if near_min == -1:
-    #             near_min = self.near_min
-    #         results = self.forward_pose_K_a_t(c2w, K, a_embedded, t_embedded, near_min=near_min)
-    #
-    #         img = results["rgb_fine_static"]
-    #         img_w, img_h = results["img_wh"]
-    #         image = img.view(img_h, img_w, 3).cpu().numpy()
-    #         image = (image * 255.0).astype(np.uint8)
-    #         depth_mean = results['depth_fine_static_exp'].view(img_h, img_w).cpu().numpy()
-    #         depth_median = results['depth_fine_static_med'].view(img_h, img_w).cpu().numpy()
-    #         if self.height is not None:
-    #             image = cv2.resize(image, (W, H))
-    #             depth_mean = cv2.resize(depth_mean, (W, H), interpolation=cv2.INTER_NEAREST)
-    #             depth_median = cv2.resize(depth_median, (W, H), interpolation=cv2.INTER_NEAREST)
-    #
-    #         # filename = goat.pjoin(folder, trajectory_name, "images/{:06d}.png".format(image_idx))
-    #         filename = make_dir(filename)
-    #         cv2.imwrite(filename, image[:, :, ::-1])
-    #         filename = os.path.join(folder, trajectory_name, "depth_mean/{:06d}.npy".format(image_idx))
-    #         filename = make_dir(filename)
-    #         np.save(filename, depth_mean)
-    #
-    #         filename = os.path.join(folder, trajectory_name, "depth_median/{:06d}.npy".format(image_idx))
-    #         filename = make_dir(filename)
-    #         np.save(filename, depth_median)
-
 
 def main(hparams):
     save_dir = os.path.join(hparams.environment_dir, "runs")
 
     if hparams.resume_name:
-        timedatestring = hparams.resume_name
+        exp_name = hparams.resume_name
     else:
-        timedatestring = datetime.datetime.now().strftime("%m-%d-%H-%M-%S")
+        exp_name = hparams.exp_name
+        if hparams.predict_label:
+            exp_name += '_label'
 
-    # print(hparams.exp_name)
+        time_string = datetime.datetime.now().strftime("%m-%d-%H-%M-%S")
+        exp_name += '_' + time_string
 
     # following pytorch lightning convention here
 
     logger = TestTubeLogger(save_dir=save_dir,
-                            name=timedatestring,
+                            name=exp_name,
                             debug=False,
                             create_git_tag=False,
                             log_graph=False)
@@ -549,7 +493,7 @@ def main(hparams):
         assert hparams.ckpt_path is not None
 
     # following pytorch lightning convention here
-    dir_path = os.path.join(save_dir, timedatestring, f"version_{version}")
+    dir_path = os.path.join(save_dir, exp_name, f"version_{version}")
     system = NeRFSystem(hparams)
 
     checkpoint_filepath = os.path.join(f'{dir_path}/ckpts')
@@ -569,6 +513,7 @@ def main(hparams):
                       num_sanity_val_steps=1,
                       val_check_interval=int(1000),  # run val every int(X) batches
                       benchmark=True,
+                      accumulate_grad_batches=hparams.accumulate_grad_batches
                       #   profiler="simple" if hparams.num_gpus == 1 else None
                       )
 
