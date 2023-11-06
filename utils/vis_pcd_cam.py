@@ -156,7 +156,8 @@ if __name__ == '__main__':
             delta_inf = 1e2 * torch.ones_like(deltas[:, :1])  # (N_rays, 1) the last delta is infinity
             deltas = torch.cat([deltas, delta_inf], -1)  # (N_rays, N_samples_)
             deltas = deltas.unsqueeze(-1).expand(-1, -1, nerflet.M)
-            noise = torch.randn_like(static_density, device=deltas.device)
+            # noise = torch.randn_like(static_density, device=deltas.device)
+            noise = 0
             results = 1 - torch.exp(-deltas * torch.relu(static_density + noise))
 
         xyz = xyz.reshape(-1, 3).cpu()

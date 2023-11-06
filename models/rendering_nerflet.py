@@ -157,7 +157,8 @@ def render_rays(models,
         delta_inf = 1e2 * torch.ones_like(deltas[:, :1])  # (N_rays, 1) the last delta is infinity
         deltas = torch.cat([deltas, delta_inf], -1)  # (N_rays, N_samples_)
         deltas = deltas.unsqueeze(-1).expand(-1, -1, model.M)
-        noise = torch.randn_like(static_density)
+        # noise = torch.randn_like(static_density)
+        noise = 0
         static_occ = 1 - torch.exp(-deltas * torch.relu(static_density + noise))
     else:
         static_occ = pred['static_occ']
