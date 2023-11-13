@@ -242,18 +242,18 @@ class NerfletWSystem(LightningModule):
         log = {'val_loss': loss}
         # typ = 'fine' if 'rgb_fine' in results else 'coarse'
 
-        if batch_nb == 0:
-            if self.hparams.dataset_name == 'sitcom3D':
-                WH = batch['img_wh']
-                W, H = WH[0, 0].item(), WH[0, 1].item()
-            else:
-                W, H = self.hparams.img_wh
-            vis_data = {}
-            vis_data.update(results)
-            vis_data["rgbs"] = rgbs
-            vis_data["img_wh"] = [W, H]
-            # image = get_image_summary_from_vis_data(vis_data)
-            # self.logger.experiment.add_image('val/GT_pred_depth', image, self.global_step)
+        # if batch_nb == 0:
+        #     if self.hparams.dataset_name == 'sitcom3D':
+        #         WH = batch['img_wh']
+        #         W, H = WH[0, 0].item(), WH[0, 1].item()
+        #     else:
+        #         W, H = self.hparams.img_wh
+        #     vis_data = {}
+        #     vis_data.update(results)
+        #     vis_data["rgbs"] = rgbs
+        #     vis_data["img_wh"] = [W, H]
+        #     # image = get_image_summary_from_vis_data(vis_data)
+        #     # self.logger.experiment.add_image('val/GT_pred_depth', image, self.global_step)
 
         if self.hparams.encode_t:
             psnr_ = psnr(results['combined_rgb_map'], rgbs)
@@ -314,7 +314,7 @@ def main(hparams):
                                           monitor='val/psnr',
                                           mode='max',
                                           save_top_k=-1,
-                                          every_n_train_steps=1000)
+                                          every_n_epochs=1)
 
     trainer = Trainer(max_epochs=hparams.num_epochs,
                       callbacks=[checkpoint_callback],
@@ -325,7 +325,7 @@ def main(hparams):
                       gpus=hparams.num_gpus,
                       accelerator='ddp' if hparams.num_gpus > 1 else None,
                       num_sanity_val_steps=1,
-                      val_check_interval=int(4000),  # run val every int(X) batches
+                      val_check_interval=int(2000),  # run val every int(X) batches
                       benchmark=True,
                       accumulate_grad_batches=hparams.accumulate_grad_batches
                       )

@@ -13,6 +13,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning import LightningModule, Trainer
 from pytorch_lightning.loggers import TestTubeLogger
 from einops import repeat
+import json
 
 from datasets.sitcom3D import Sitcom3DDataset
 from datasets.ray_utils import get_ray_directions, get_rays, get_rays_batch_version
@@ -439,18 +440,18 @@ class NeRFSystem(LightningModule):
         log = {'val_loss': loss}
         typ = 'fine' if 'rgb_fine' in results else 'coarse'
 
-        if batch_nb == 0:
-            if self.hparams.dataset_name == 'sitcom3D':
-                WH = batch['img_wh']
-                W, H = WH[0, 0].item(), WH[0, 1].item()
-            else:
-                W, H = self.hparams.img_wh
-            vis_data = {}
-            vis_data.update(results)
-            vis_data["rgbs"] = rgbs
-            vis_data["img_wh"] = [W, H]
-            # image = get_image_summary_from_vis_data(vis_data)
-            # self.logger.experiment.add_image('val/GT_pred_depth', image, self.global_step)
+        # if batch_nb == 0:
+        #     if self.hparams.dataset_name == 'sitcom3D':
+        #         WH = batch['img_wh']
+        #         W, H = WH[0, 0].item(), WH[0, 1].item()
+        #     else:
+        #         W, H = self.hparams.img_wh
+        #     vis_data = {}
+        #     vis_data.update(results)
+        #     vis_data["rgbs"] = rgbs
+        #     vis_data["img_wh"] = [W, H]
+        #     # image = get_image_summary_from_vis_data(vis_data)
+        #     # self.logger.experiment.add_image('val/GT_pred_depth', image, self.global_step)
 
         psnr_ = psnr(results[f'rgb_{typ}'], rgbs)
         log['val_psnr'] = psnr_
@@ -463,6 +464,7 @@ class NeRFSystem(LightningModule):
 
         self.log('val/loss', mean_loss)
         self.log('val/psnr', mean_psnr, prog_bar=True)
+        # pass
 
 
 def main(hparams):
@@ -494,13 +496,19 @@ def main(hparams):
 
     # following pytorch lightning convention here
     dir_path = os.path.join(save_dir, exp_name, f"version_{version}")
+    config = vars(hparams)
+    config_save_path = os.path.join(dir_path, 'config.json')
+    json_obj = json.dumps(config, indent=2)
+    with open(config_save_path, 'w') as f:
+        f.write(json_obj)
     system = NeRFSystem(hparams)
 
     checkpoint_filepath = os.path.join(f'{dir_path}/ckpts')
     checkpoint_callback = ModelCheckpoint(dirpath=checkpoint_filepath,
                                           monitor='val/psnr',
                                           mode='max',
-                                          save_top_k=-1)
+                                          save_top_k=-1,
+                                          every_n_epochs=1)
 
     trainer = Trainer(max_epochs=hparams.num_epochs,
                       callbacks=[checkpoint_callback],
