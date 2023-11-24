@@ -587,7 +587,7 @@ class Sitcom3DDataset(RenderDataset):
             sample['rgbs'] = img
 
             mask = self.get_mask(id_).astype(float)
-            # sample['masks'] = self.transform(mask).view(-1)
+            # TODO: Actually should consider to use human mask when computing psnr for validation images
             sample['human_mask'] = self.transform(mask).view(-1) < 1.0
 
             label = self.get_panoptic_labels(id_).astype(float)

@@ -199,6 +199,7 @@ def render_rays(models,
         transmittance = torch.cumprod(alphas_shifted[:, :-1], -1)  # [1, 1-a1, (1-a1)(1-a2), ...]
 
         if output_transient:
+            # part of the static/transient weights when computing the combined rgb map (i.e. eqn (8) in nerf-w paper)
             static_weights = static_alphas * transmittance
             transient_weights = transient_alphas * transmittance
 
@@ -230,8 +231,8 @@ def render_rays(models,
             results['transient_accumulation'] = reduce(transient_weights, 'n1 n2 -> n1', 'sum')
 
             # the rgb maps here are when both fields exist
-            results['_rgb_fine_static'] = static_rgb_map
-            results['_rgb_fine_transient'] = transient_rgb_map
+            # results['_rgb_fine_static'] = static_rgb_map
+            # results['_rgb_fine_transient'] = transient_rgb_map
             results['rgb_fine'] = static_rgb_map + transient_rgb_map
             if predict_label:
                 static_label_map = reduce(rearrange(static_weights, 'n1 n2 -> n1 n2 1') * static_labels,
@@ -250,32 +251,35 @@ def render_rays(models,
                 static_alphas_shifted = \
                     torch.cat([torch.ones_like(static_alphas[:, :1]), 1 - static_alphas], -1)
                 static_transmittance = torch.cumprod(static_alphas_shifted[:, :-1], -1)
-                static_weights_ = static_alphas * static_transmittance
-                static_rgb_map_ = \
-                    reduce(rearrange(static_weights_, 'n1 n2 -> n1 n2 1') * static_rgbs,
+                # The weights when consider static contents in the scene
+                static_only_weights = static_alphas * static_transmittance
+                static_only_rgb_map = \
+                    reduce(rearrange(static_only_weights, 'n1 n2 -> n1 n2 1') * static_rgbs,
                            'n1 n2 c -> n1 c', 'sum')
                 if white_back:
-                    static_rgb_map_ += 1 - rearrange(weights_sum, 'n -> n 1')
-                results['rgb_fine_static'] = static_rgb_map_
+                    static_only_rgb_map += 1 - rearrange(weights_sum, 'n -> n 1')
+                results['rgb_fine_static'] = static_only_rgb_map
                 results['depth_fine_static_exp'] = \
-                    reduce(static_weights_ * z_vals, 'n1 n2 -> n1', 'sum')
+                    reduce(static_only_weights * z_vals, 'n1 n2 -> n1', 'sum')
 
-                results['depth_fine_static_med'] = compute_depth_map(static_weights_, z_vals)
+                results['depth_fine_static_med'] = compute_depth_map(static_only_weights, z_vals)
 
                 transient_alphas_shifted = \
                     torch.cat([torch.ones_like(transient_alphas[:, :1]), 1 - transient_alphas], -1)
                 transient_transmittance = torch.cumprod(transient_alphas_shifted[:, :-1], -1)
-                transient_weights_ = transient_alphas * transient_transmittance
+                # The weights when consider transient contents in the scene
+                transient_only_weights = transient_alphas * transient_transmittance
                 results['rgb_fine_transient'] = \
-                    reduce(rearrange(transient_weights_, 'n1 n2 -> n1 n2 1') * transient_rgbs,
+                    reduce(rearrange(transient_only_weights, 'n1 n2 -> n1 n2 1') * transient_rgbs,
                            'n1 n2 c -> n1 c', 'sum')
                 results['depth_fine_transient'] = \
-                    reduce(transient_weights_ * z_vals, 'n1 n2 -> n1', 'sum')
+                    reduce(transient_only_weights * z_vals, 'n1 n2 -> n1', 'sum')
+
                 if predict_label:
-                    static_label_map_ = reduce(rearrange(static_weights_, 'n1 n2 -> n1 n2 1') * static_labels,
+                    static_label_map_ = reduce(rearrange(static_only_weights, 'n1 n2 -> n1 n2 1') * static_labels,
                                                           'n1 n2 c -> n1 c', 'sum')
                     results['label_fine_static'] = static_label_map_
-                    transient_label_map_ = reduce(rearrange(transient_weights_, 'n1 n2 -> n1 n2 1') * transient_labels,
+                    transient_label_map_ = reduce(rearrange(transient_only_weights, 'n1 n2 -> n1 n2 1') * transient_labels,
                                                              'n1 n2 c -> n1 c', 'sum')
                     results['label_fine_transient'] = transient_label_map_
         else:  # no transient field

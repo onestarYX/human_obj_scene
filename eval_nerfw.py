@@ -104,10 +104,7 @@ def render_to_path(path, select_part_idx=None):
         w, h = dataset.img_wh
 
     # GT image and predicted combined image
-    if config.encode_t:
-        img_pred = np.clip(results['combined_rgb_map'].view(h, w, 3).cpu().numpy(), 0, 1)
-    else:
-        img_pred = np.clip(results['rgb_fine'].view(h, w, 3).cpu().numpy(), 0, 1)
+    img_pred = np.clip(results['rgb_fine'].view(h, w, 3).cpu().numpy(), 0, 1)
     img_pred_ = (img_pred * 255).astype(np.uint8)
     rgbs = sample['rgbs']
     img_gt = rgbs.view(h, w, 3)
@@ -119,10 +116,13 @@ def render_to_path(path, select_part_idx=None):
     rows.append(np.concatenate([img_gt_, img_pred_], axis=1))
 
     # Predicted static image and predicted static depth
-    # img_static = np.clip(results['_rgb_fine_static'].view(h, w, 3).cpu().numpy(), 0, 1)
-    # img_static_ = (img_static * 255).astype(np.uint8)
-    img_static_ = np.zeros((h, w, 3), dtype=np.ubyte)
-    static_depth = results['depth_fine'].cpu().numpy()
+    if config.encode_t:
+        img_static = np.clip(results['rgb_fine_static'].view(h, w, 3).cpu().numpy(), 0, 1)
+        img_static_ = (img_static * 255).astype(np.uint8)
+        static_depth = results['depth_fine_static_exp'].cpu().numpy()
+    else:
+        img_static_ = np.zeros((h, w, 3), dtype=np.ubyte)
+        static_depth = results['depth_fine'].cpu().numpy()
     depth_static = np.array(np_visualize_depth(static_depth, cmap=cv2.COLORMAP_BONE))
     depth_static = depth_static.reshape(h, w, 1)
     depth_static_ = np.repeat(depth_static, 3, axis=2)
