@@ -179,7 +179,7 @@ class RenderDataset(Dataset):
                 redundant_cls_list.append(cls)
         for redudant_cls in redundant_cls_list:
             new_cls_list.remove(redudant_cls)
-        print(f"Found {len(new_cls_list)} panoptic classes")
+        # print(f"Found {len(new_cls_list)} panoptic classes")
 
         # Remapping original stuff and thing labels to new class list
         stuff_cls_list = cls_meta['stuff']

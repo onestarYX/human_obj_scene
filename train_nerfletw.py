@@ -48,11 +48,18 @@ class NerfletWSystem(LightningModule):
         # self.hparams = hparams
         self.save_hyperparameters(hparams)
 
-        use_mask_loss = True
-        if 'use_mask_loss' in hparams:
-            use_mask_loss = hparams.use_mask_loss
-        self.loss = loss_dict['nerfletw'](weight_coverage_loss=hparams.weight_coverage_loss,
-                                          use_mask_loss=hparams.use_mask_loss, label_only=hparams.label_only)
+        loss_weights = {
+            'color_l': hparams.w_color_l,
+            'beta_l': hparams.w_beta_l,
+            'transient_reg': hparams.w_transient_reg,
+            'label_cce': hparams.w_label_cce,
+            'mask_loss': hparams.w_mask_loss,
+            'occupancy_loss': hparams.w_occupancy_loss,
+            'occupancy_loss_ell': hparams.w_occupancy_loss_ell,
+            'coverage_loss': hparams.w_coverage_loss,
+            'overlap_loss': hparams.w_overlap_loss,
+        }
+        self.loss = loss_dict['nerfletw'](loss_weights=loss_weights, label_only=hparams.label_only)
 
         self.models_to_train = {}
         self.embeddings = {}
@@ -66,7 +73,6 @@ class NerfletWSystem(LightningModule):
             self.models_to_train['embedding_t'] = self.embedding_t
 
 
-        self.models_mm_to_train = []
         self.eval_only = eval_only
         self.scene_bbox = None
         self.init_datasets()
@@ -174,7 +180,6 @@ class NerfletWSystem(LightningModule):
 
     def configure_optimizers(self):
         self.optimizer = get_optimizer(self.hparams, self.models_to_train)
-        self.optimizer.add_param_group({"params": get_parameters(self.models_mm_to_train), "lr": self.hparams.pose_lr})
         scheduler = get_scheduler(self.hparams, self.optimizer)
         return [self.optimizer], [scheduler]
 
@@ -211,7 +216,6 @@ class NerfletWSystem(LightningModule):
         return rays, ray_mask
 
     def training_step(self, batch, batch_nb):
-        print(self.global_step)
         rays, ray_mask = self.rays_from_batch(batch)
         if 'ts2' in batch:
             ts = batch['ts2']
@@ -301,6 +305,7 @@ def main(hparams):
         if hparams.predict_label:
             exp_name += '_label'
 
+        group_name = exp_name   # wandb group name
         time_string = datetime.datetime.now().strftime("%m-%d-%H-%M-%S")
         exp_name += '_' + time_string
 
@@ -331,7 +336,7 @@ def main(hparams):
         name=exp_name,
         # Track hyperparameters and run metadata
         config=config,
-        group="total"
+        group=group_name
     )
 
 

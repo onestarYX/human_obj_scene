@@ -73,7 +73,7 @@ def get_parser():
                         help='how much to downscale the images for sitcom3D dataset')
     parser.add_argument('--img_downscale_val', type=int, default=4,
                         help='how much to downscale the images for sitcom3D dataset')
-    parser.add_argument('--use_cache', type=str2bool, default="True",
+    parser.add_argument('--use_cache', type=str2bool, default="False",
                         help='whether to use ray cache (make sure img_downscale is the same)')
 
     # original NeRF parameters
@@ -240,7 +240,6 @@ def get_parser():
     parser.add_argument('--things_only', action='store_true', default=False)
     parser.add_argument('--loss_pos_ray_ratio', type=float, default=1)
     parser.add_argument('--disable_ellipsoid', action='store_true', default=False)
-    parser.add_argument('--weight_coverage_loss', type=float, default=0.01)
     parser.add_argument('--use_spread_out_bias', action='store_true', default=False)
     parser.add_argument('--near', type=float, default=2.0)
     parser.add_argument('--far', type=float, default=6.0)
@@ -254,6 +253,16 @@ def get_parser():
     parser.add_argument('--disable_tf', action='store_true', default=False)
     parser.add_argument('--sharpness', type=float, default=100)
     parser.add_argument('--predict_density', action='store_true', default=False)
+
+    parser.add_argument('--w_color_l', type=float, default=1)
+    parser.add_argument('--w_beta_l', type=float, default=1)
+    parser.add_argument('--w_transient_reg', type=float, default=1)
+    parser.add_argument('--w_label_cce', type=float, default=1)
+    parser.add_argument('--w_mask_loss', type=float, default=1)
+    parser.add_argument('--w_occupancy_loss', type=float, default=1)
+    parser.add_argument('--w_occupancy_loss_ell', type=float, default=0.0001)
+    parser.add_argument('--w_coverage_loss', type=float, default=0.01)
+    parser.add_argument('--w_overlap_loss', type=float, default=0.01)
 
     return parser
 

@@ -70,7 +70,7 @@ class NerfletWLoss(nn.Module):
     """
 
     def __init__(self, lambda_u=0.01, min_num_rays_per_part=32, max_hitting_parts_per_ray=3,
-                 weight_coverage_loss=0.01, use_mask_loss=True, label_only=False):
+                 loss_weights=None, label_only=False):
         """
         lambda_u: in equation 13
         """
@@ -78,21 +78,8 @@ class NerfletWLoss(nn.Module):
         self.lambda_u = lambda_u
         self.min_num_rays_per_part = min_num_rays_per_part
         self.max_hitting_parts_per_ray = max_hitting_parts_per_ray
-        self.weights = {
-            'color_l': 1,
-            'beta_l': 1,
-            'transient_reg': 1,
-            'label_cce': 1,
-            'mask_loss': 1,
-            'occupancy_loss': 1,
-            'occupancy_loss_ell': 0.0001,
-            'coverage_loss': weight_coverage_loss,
-            'overlap_loss': 0.01,
-            # 'occupancy_loss_ell': 1,
-            # 'coverage_loss': 1,
-            # 'overlap_loss': 1
-        }
-        self.use_mask_loss = use_mask_loss
+        assert loss_weights is not None
+        self.weights = loss_weights
         self.label_only = label_only
 
     def forward(self, pred, gt_rgbs, gt_labels, ray_mask, encode_t=True, predict_label=True, loss_pos_ray_ratio=1):
@@ -141,8 +128,7 @@ class NerfletWLoss(nn.Module):
                                                                      gt_labels[inside_rays_mask].to(torch.long))
 
         # Mask loss
-        if self.use_mask_loss:
-            ret['mask_loss'] = torch.mean((pred['static_mask'] - ray_mask) ** 2)
+        ret['mask_loss'] = torch.mean((pred['static_mask'] - ray_mask) ** 2)
 
         # Occupancy loss
         ray_max_occ = pred['static_occ'].max(-1)[0].max(-1)[0]
