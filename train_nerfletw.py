@@ -35,6 +35,8 @@ from utils import load_ckpt
 import json
 
 import wandb
+from eval_nerfletw import render_to_path
+import numpy as np
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -105,6 +107,8 @@ class NerfletWSystem(LightningModule):
                                          near=self.hparams.near, **kwargs)
             self.val_dataset = dataset(split='val', img_downscale=self.hparams.img_downscale_val,
                                        near=self.hparams.near, **kwargs)
+            self.test_dataset = dataset(split='test_train', img_downscale=self.hparams.img_downscale,
+                                        near=self.hparams.near, **kwargs)
             self.scene_bbox = self.train_dataset.bbox
         elif self.hparams.dataset_name == 'blender':
             self.train_dataset = BlenderDataset(root_dir=self.hparams.environment_dir,
@@ -188,6 +192,13 @@ class NerfletWSystem(LightningModule):
                           batch_size=1,  # validate one image (H*W rays) at a time
                           pin_memory=True)
 
+    def test_dataloader(self):
+        return DataLoader(self.test_dataset,
+                          shuffle=False,
+                          num_workers=8,
+                          batch_size=1,
+                          pin_memory=True)
+
     def is_learning_pose(self):
         return (self.hparams.learn_f or self.hparams.learn_r or self.hparams.learn_t)
 
@@ -200,6 +211,7 @@ class NerfletWSystem(LightningModule):
         return rays, ray_mask
 
     def training_step(self, batch, batch_nb):
+        print(self.global_step)
         rays, ray_mask = self.rays_from_batch(batch)
         if 'ts2' in batch:
             ts = batch['ts2']
@@ -263,6 +275,18 @@ class NerfletWSystem(LightningModule):
         self.log('val/psnr', psnr_, prog_bar=True)
         wandb.log(dict_to_log)
 
+        print("Rendering some sample images from the training set...")
+        render_img_name = f"s={self.global_step:06d}_i={batch_nb:03d}"
+        render_path = os.path.join(self.hparams.render_dir, f"{render_img_name}.png")
+        np.random.seed(19)
+        label_colors = np.random.rand(self.hparams.num_classes, 3)
+        part_colors = np.random.rand(self.hparams.num_parts, 3)
+        _, res_img = render_to_path(path=render_path, dataset=self.test_dataset,
+                                    idx=batch_nb, models=self.models, embeddings=self.embeddings,
+                                    config=self.hparams, label_colors=label_colors, part_colors=part_colors)
+        wd_img = wandb.Image(res_img, caption=f"{render_img_name}")
+        wandb.log({f"Renderings_id={batch_nb}": wd_img})
+
         return dict_to_log
 
 
@@ -304,15 +328,17 @@ def main(hparams):
         # Set the project where this run will be logged
         project="my_nerfletsW",
         name=exp_name,
-        notes=exp_name,
         # Track hyperparameters and run metadata
-        config=config
+        config=config,
+        group="total"
     )
 
 
+    hparams.render_dir = f"{dir_path}/render_logs"
+    os.makedirs(hparams.render_dir, exist_ok=True)
     system = NerfletWSystem(hparams)
 
-    checkpoint_filepath = os.path.join(f'{dir_path}/ckpts')
+    checkpoint_filepath = f'{dir_path}/ckpts'
     checkpoint_callback = ModelCheckpoint(dirpath=checkpoint_filepath,
                                           monitor='val/psnr',
                                           mode='max',
@@ -324,11 +350,12 @@ def main(hparams):
                       resume_from_checkpoint=hparams.ckpt_path,
                       logger=logger,
                       weights_summary=None,
-                      progress_bar_refresh_rate=hparams.refresh_every,
+                      progress_bar_refresh_rate=hparams.bar_update_freq,
                       gpus=hparams.num_gpus,
                       accelerator='ddp' if hparams.num_gpus > 1 else None,
                       num_sanity_val_steps=1,
-                      val_check_interval=0.2,  # run val every int(X) batches
+                      val_check_interval=hparams.val_freq if hparams.val_freq < 1 else int(hparams.val_freq),
+                      limit_val_batches=5,
                       benchmark=True,
                       accumulate_grad_batches=hparams.accumulate_grad_batches
                       )

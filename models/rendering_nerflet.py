@@ -182,18 +182,6 @@ def render_rays(models,
     static_mask = torch.sum(static_weights, dim=1)
     if white_back:
         static_rgb_map += 1 - static_mask.unsqueeze(-1)
-    if 'offset' in kwargs and kwargs['offset']:
-        offset = kwargs['offset']
-        temp_out_path = kwargs['check_pixel_log']
-        with open(temp_out_path, 'w') as f:
-            for idx in range(N_samples):
-                position = xyz[offset][idx]
-                f.write(f"position: ({position[0]:.4f}, {position[1]:.4f}, {position[2]:.4f}) | "
-                        f"ell_occ: {pred['static_ellipsoid_occ'][offset][idx].item():.6f} | "
-                        f"occ: {static_occ[offset][idx].item():.6f} | "
-                        f"transmittance: {static_transmittance[offset][idx].item():.6f} | "
-                        f"weight: {static_weights[offset][idx].item():.6f} | "
-                        f"color: {static_rgb[offset][idx]}\n")
     results['static_depth'] = static_depth
     results['static_rgb_map'] = static_rgb_map
     results['static_mask'] = static_mask

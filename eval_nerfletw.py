@@ -44,12 +44,6 @@ def batched_inference(models, embeddings,
     B = rays.shape[0]
     results = defaultdict(list)
     for chunk_idx in range(0, B, chunk):
-        offset = None
-        if i_check and j_check:
-            flat_idx = i_check * 400 + j_check
-            if flat_idx in range(chunk_idx, chunk_idx+chunk):
-                offset = flat_idx - chunk_idx
-
         rendered_ray_chunks = \
             render_rays(models,
                         embeddings,
@@ -64,8 +58,6 @@ def batched_inference(models, embeddings,
                         white_back,
                         predict_density=predict_density,
                         test_time=True,
-                        offset=offset,
-                        check_pixel_log=check_pixel_log,
                         **kwargs)
 
         for k, v in rendered_ray_chunks.items():
@@ -89,8 +81,9 @@ def compute_iou(pred, gt, num_cls):
 
 
 
-def render_to_path(path, select_part_idx=None):
-    sample = dataset[i]
+def render_to_path(path, dataset, idx, models, embeddings, config,
+                   label_colors, part_colors, select_part_idx=None):
+    sample = dataset[idx]
     rays = sample['rays']
     if 'ts2' in sample:
         ts = sample['ts2']
@@ -102,6 +95,7 @@ def render_to_path(path, select_part_idx=None):
                                 config.chunk, dataset.white_back, config.predict_density)
 
     rows = []
+    metrics = {}
 
     # GT image and predicted image
     if config.dataset_name == 'sitcom3D':
@@ -121,13 +115,11 @@ def render_to_path(path, select_part_idx=None):
     if select_part_idx is not None:
         non_selected_part_mask = ray_associations != select_part_idx
         img_pred_[non_selected_part_mask] = 255
-    if i_check and j_check:
-        img_pred_[i_check-2:i_check+2, j_check-2:j_check+2] = np.array([255, 0, 0], dtype=np.uint8)
     rgbs = sample['rgbs']
     img_gt = rgbs.view(h, w, 3)
     psnr_ = psnr(img_gt, img_pred).item()
     print(f"PSNR: {psnr_}")
-    psnrs.append(psnr_)
+    metrics['psnr'] = psnr_
     img_gt_ = np.clip(img_gt.cpu().numpy(), 0, 1)
     img_gt_ = (img_gt_ * 255).astype(np.uint8)
     rows.append(np.concatenate([img_gt_, img_pred_], axis=1))
@@ -154,7 +146,7 @@ def render_to_path(path, select_part_idx=None):
         label_map_pred = label_colors[label_pred].reshape((h, w, 3))
         label_map_pred = (label_map_pred * 255).astype(np.uint8)
         iou = compute_iou(label_pred, label_gt, config.num_classes)
-        iou_combined.append(iou)
+        metrics['iou_combined'] = iou
         print(f"Semantic iou: {iou}")
         rows.append(np.concatenate([label_map_gt, label_map_pred], axis=1))
 
@@ -162,7 +154,7 @@ def render_to_path(path, select_part_idx=None):
             label_static_pred = torch.argmax(results['static_label'], dim=1).to(torch.long).cpu().numpy()
             label_map_static_pred = label_colors[label_static_pred].reshape((h, w, 3))
             label_map_static_pred = (label_map_static_pred * 255).astype(np.uint8)
-            iou_static.append(compute_iou(label_static_pred, label_gt, config.num_classes))
+            metrics['iou_static'] = compute_iou(label_static_pred, label_gt, config.num_classes)
 
             label_transient_pred = torch.argmax(results['transient_label'], dim=1).to(torch.long).cpu().numpy()
             label_map_transient_pred = label_colors[label_transient_pred].reshape((h, w, 3))
@@ -180,6 +172,8 @@ def render_to_path(path, select_part_idx=None):
     res_img = np.concatenate(rows, axis=0)
     imageio.imwrite(path, res_img)
 
+    return metrics, res_img
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -191,7 +185,6 @@ if __name__ == '__main__':
     parser.add_argument('--num_parts', type=int, default=-1)
     parser.add_argument('--num_images', type=int, default=-1)
     parser.add_argument('--split', type=str, default='val')
-    parser.add_argument('--check_pixel', type=int, nargs=4)
     parser.add_argument("opts", nargs=argparse.REMAINDER)
     args = parser.parse_args()
 
@@ -255,24 +248,15 @@ if __name__ == '__main__':
     models = {'nerflet': nerflet}
 
     psnrs = []
+    np.random.seed(19)
     label_colors = np.random.rand(config.num_classes, 3)
     part_colors = np.random.rand(config.num_parts, 3)
     iou_combined = []
     iou_static = []
 
-    if args.check_pixel:
-        i0, j0, i1, j1 = args.check_pixel
-        cp_list = [(i0, j0), (i1, j1)]
-        log_list = ['logs/log0.txt', 'logs/log1.txt']
-
     for i in tqdm(range(len(dataset))):
         if args.num_images != -1 and i >= args.num_images:
             continue
-        i_check, j_check = (None, None)
-        check_pixel_log = None
-        if args.check_pixel and i < len(cp_list):
-            i_check, j_check = cp_list[i]
-            check_pixel_log = log_list[i]
         if args.sweep_parts:
             for j in range(config.num_parts):
                 if args.num_parts != -1 and j >= args.num_parts:
@@ -281,19 +265,29 @@ if __name__ == '__main__':
                 path = output_dir / f"frame_{i:03d}"
                 path.mkdir(exist_ok=True)
                 path = path / f"part_{j}.png"
-                render_to_path(path, j)
+                render_to_path(path, dataset=dataset, idx=i, models=models, embeddings=embeddings,
+                               config=config, label_colors=label_colors, part_colors=part_colors,
+                               select_part_idx=j)
         elif args.select_part_idx is not None:
             path = output_dir / f"{i:03d}"
             path.mkdir(exist_ok=True)
             path = path / f"{args.select_part_idx}.png"
-            render_to_path(path, args.select_part_idx)
+            render_to_path(path, dataset=dataset, idx=i, models=models, embeddings=embeddings,
+                           config=config, label_colors=label_colors, part_colors=part_colors,
+                           select_part_idx=args.select_part_idx)
         else:
             path = output_dir / f"{i:03d}.png"
-            render_to_path(path)
+            metrics, _ = render_to_path(path, dataset=dataset, idx=i, models=models, embeddings=embeddings,
+                                        config=config, label_colors=label_colors, part_colors=part_colors)
+            psnrs.append(metrics['psnr'])
+            if 'iou_combined' in metrics:
+                iou_combined.append(metrics['iou_combined'])
+            if 'iou_static' in metrics:
+                iou_static.append(metrics['iou_static'])
 
     if config.predict_label:
-        print('Mean IoU combined', iou_combined)
-        print('Mean IoU static', iou_static)
+        print('Mean IoU combined', np.mean(iou_combined))
+        print('Mean IoU static', np.mean(iou_static))
 
     if psnrs:
         mean_psnr = np.mean(psnrs)
