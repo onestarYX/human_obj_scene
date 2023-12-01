@@ -318,6 +318,7 @@ def main(hparams):
         assert hparams.ckpt_path is not None
 
     dir_path = os.path.join(save_dir, exp_name, f"version_{version}")
+    os.makedirs(dir_path, exist_ok=True)
     config = vars(hparams)
     config_save_path = os.path.join(dir_path, 'config.json')
     json_obj = json.dumps(config, indent=2)
