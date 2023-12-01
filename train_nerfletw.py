@@ -18,7 +18,6 @@ from datasets.ray_utils import get_rays_batch_version
 # models
 from models.nerflet import Nerflet
 from models.rendering_nerflet import render_rays
-from models.pose import LearnFocal, LearnPose
 
 # optimizer, scheduler, visualization
 from utils import (
@@ -34,6 +33,8 @@ from metrics import psnr
 
 from utils import load_ckpt
 import json
+
+import wandb
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -99,10 +100,11 @@ class NerfletWSystem(LightningModule):
             kwargs['val_num'] = self.hparams.num_gpus
             kwargs['use_cache'] = self.hparams.use_cache
             kwargs['num_limit'] = self.hparams.num_limit
-            self.train_dataset = dataset(split='train' if not self.eval_only else 'val',
+            self.train_dataset = dataset(split='train',
                                          img_downscale=self.hparams.img_downscale,
                                          near=self.hparams.near, **kwargs)
-            self.val_dataset = dataset(split='val', img_downscale=self.hparams.img_downscale_val, **kwargs)
+            self.val_dataset = dataset(split='val', img_downscale=self.hparams.img_downscale_val,
+                                       near=self.hparams.near, **kwargs)
             self.scene_bbox = self.train_dataset.bbox
         elif self.hparams.dataset_name == 'blender':
             self.train_dataset = BlenderDataset(root_dir=self.hparams.environment_dir,
@@ -175,14 +177,14 @@ class NerfletWSystem(LightningModule):
     def train_dataloader(self):
         return DataLoader(self.train_dataset,
                           shuffle=True,
-                          num_workers=4,
+                          num_workers=8,
                           batch_size=self.hparams.batch_size,
                           pin_memory=True)
 
     def val_dataloader(self):
         return DataLoader(self.val_dataset,
                           shuffle=False,
-                          num_workers=4,
+                          num_workers=8,
                           batch_size=1,  # validate one image (H*W rays) at a time
                           pin_memory=True)
 
@@ -222,6 +224,15 @@ class NerfletWSystem(LightningModule):
             self.log(f'train/{k}', v, prog_bar=True)
         self.log('train/psnr', psnr_, prog_bar=True)
 
+        # wandb log
+        dict_to_log = {}
+        dict_to_log['lr'] = get_learning_rate(self.optimizer)
+        dict_to_log['train/loss'] = loss
+        for k, v in loss_d.items():
+            dict_to_log[f"train/{k}"] = v
+        dict_to_log['train/psnr'] = psnr_
+        wandb.log(dict_to_log)
+
         return loss
 
     def validation_step(self, batch, batch_nb):
@@ -239,37 +250,20 @@ class NerfletWSystem(LightningModule):
         loss_d = self.loss(results, rgbs, gt_labels, ray_mask,
                            self.hparams.encode_t, self.hparams.predict_label, self.hparams.loss_pos_ray_ratio)
         loss = sum(l for l in loss_d.values())
-        log = {'val_loss': loss}
-        # typ = 'fine' if 'rgb_fine' in results else 'coarse'
-
-        # if batch_nb == 0:
-        #     if self.hparams.dataset_name == 'sitcom3D':
-        #         WH = batch['img_wh']
-        #         W, H = WH[0, 0].item(), WH[0, 1].item()
-        #     else:
-        #         W, H = self.hparams.img_wh
-        #     vis_data = {}
-        #     vis_data.update(results)
-        #     vis_data["rgbs"] = rgbs
-        #     vis_data["img_wh"] = [W, H]
-        #     # image = get_image_summary_from_vis_data(vis_data)
-        #     # self.logger.experiment.add_image('val/GT_pred_depth', image, self.global_step)
+        self.log('val/loss', loss, prog_bar=True)
+        dict_to_log = {'val/loss': loss}
+        for k, v in loss_d.items():
+            dict_to_log[f"val/{k}"] = v
 
         if self.hparams.encode_t:
             psnr_ = psnr(results['combined_rgb_map'], rgbs)
         else:
             psnr_ = psnr(results['static_rgb_map'], rgbs)
-        log['val_psnr'] = psnr_
+        dict_to_log['val/psnr'] = psnr_
+        self.log('val/psnr', psnr_, prog_bar=True)
+        wandb.log(dict_to_log)
 
-        return log
-
-    def validation_epoch_end(self, outputs):
-        mean_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
-        mean_psnr = torch.stack([x['val_psnr'] for x in outputs]).mean()
-
-        self.log('val/loss', mean_loss)
-        self.log('val/psnr', mean_psnr, prog_bar=True)
-
+        return dict_to_log
 
 
 def main(hparams):
@@ -299,13 +293,22 @@ def main(hparams):
     if hparams.resume_name:
         assert hparams.ckpt_path is not None
 
-    # following pytorch lightning convention here
     dir_path = os.path.join(save_dir, exp_name, f"version_{version}")
     config = vars(hparams)
     config_save_path = os.path.join(dir_path, 'config.json')
     json_obj = json.dumps(config, indent=2)
     with open(config_save_path, 'w') as f:
         f.write(json_obj)
+
+    run = wandb.init(
+        # Set the project where this run will be logged
+        project="my_nerfletsW",
+        name=exp_name,
+        notes=exp_name,
+        # Track hyperparameters and run metadata
+        config=config
+    )
+
 
     system = NerfletWSystem(hparams)
 
@@ -325,7 +328,7 @@ def main(hparams):
                       gpus=hparams.num_gpus,
                       accelerator='ddp' if hparams.num_gpus > 1 else None,
                       num_sanity_val_steps=1,
-                      val_check_interval=int(2000),  # run val every int(X) batches
+                      val_check_interval=0.2,  # run val every int(X) batches
                       benchmark=True,
                       accumulate_grad_batches=hparams.accumulate_grad_batches
                       )

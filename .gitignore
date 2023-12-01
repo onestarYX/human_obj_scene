@@ -140,3 +140,4 @@ data
 
 shell_scripts/
 output/
+wandb/
