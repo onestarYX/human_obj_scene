@@ -107,13 +107,14 @@ def render_to_path(path, dataset, idx, models, embeddings, config,
 
     # GT image and predicted combined image
     ray_associations = results['static_ray_associations'].cpu().numpy().reshape((h, w))
+    positive_rays_mask = results['static_positive_rays'].cpu().numpy().reshape((h, w))
     if config.encode_t:
         img_pred = np.clip(results['combined_rgb_map'].view(h, w, 3).cpu().numpy(), 0, 1)
     else:
         img_pred = np.clip(results['static_rgb_map'].view(h, w, 3).cpu().numpy(), 0, 1)
     img_pred_ = (img_pred * 255).astype(np.uint8)
     if select_part_idx is not None:
-        non_selected_part_mask = ray_associations != select_part_idx
+        non_selected_part_mask = np.logical_and(ray_associations != select_part_idx, np.logical_not(positive_rays_mask))
         img_pred_[non_selected_part_mask] = 255
     rgbs = sample['rgbs']
     img_gt = rgbs.view(h, w, 3)
@@ -162,6 +163,7 @@ def render_to_path(path, dataset, idx, models, embeddings, config,
             rows.append(np.concatenate([label_map_static_pred, label_map_transient_pred], axis=1))
 
     ray_association_map = part_colors[ray_associations]
+    ray_association_map[np.logical_not(positive_rays_mask)] = np.array([0, 0, 0])
     ray_association_map = (ray_association_map * 255).astype(np.uint8)
     obj_mask = results['static_mask'].cpu().numpy()
     obj_mask = obj_mask[..., np.newaxis] * np.array([[1, 1, 1]])
