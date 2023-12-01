@@ -344,6 +344,7 @@ class Nerflet(nn.Module):
         '''Get static semantics'''
         if self.predict_label:
             static_label_logits = self.part_label_logits(ray_associations)
+            static_label_logits[~positive_rays] = 0
             prediction['static_label'] = static_label_logits
 
 

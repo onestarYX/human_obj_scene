@@ -145,6 +145,7 @@ def render_to_path(path, dataset, idx, models, embeddings, config,
             label_pred = results['static_label']
         label_pred = torch.argmax(label_pred, dim=1).to(torch.long).cpu().numpy()
         label_map_pred = label_colors[label_pred].reshape((h, w, 3))
+        label_map_pred[~positive_rays_mask] = 0
         label_map_pred = (label_map_pred * 255).astype(np.uint8)
         iou = compute_iou(label_pred, label_gt, config.num_classes)
         metrics['iou_combined'] = iou
@@ -163,7 +164,7 @@ def render_to_path(path, dataset, idx, models, embeddings, config,
             rows.append(np.concatenate([label_map_static_pred, label_map_transient_pred], axis=1))
 
     ray_association_map = part_colors[ray_associations]
-    ray_association_map[np.logical_not(positive_rays_mask)] = np.array([0, 0, 0])
+    ray_association_map[~positive_rays_mask] = 0
     ray_association_map = (ray_association_map * 255).astype(np.uint8)
     obj_mask = results['static_mask'].cpu().numpy()
     obj_mask = obj_mask[..., np.newaxis] * np.array([[1, 1, 1]])
