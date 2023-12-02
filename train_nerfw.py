@@ -519,6 +519,7 @@ def main(hparams):
                       accelerator='ddp' if hparams.num_gpus > 1 else None,
                       num_sanity_val_steps=1,
                       val_check_interval=hparams.val_freq,  # run val every int(X) batches
+                      limit_val_batches=10,
                       benchmark=True,
                       accumulate_grad_batches=hparams.accumulate_grad_batches
                       #   profiler="simple" if hparams.num_gpus == 1 else None
