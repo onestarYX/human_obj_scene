@@ -299,6 +299,8 @@ def main(hparams):
 
     if hparams.resume_name:
         exp_name = hparams.resume_name
+        group_name = exp_name.split('_')[:-1]
+        group_name = '_'.join(group_name) + '_cont'
     else:
         exp_name = hparams.exp_name
         exp_name = f"{exp_name}_np={hparams.num_parts}"

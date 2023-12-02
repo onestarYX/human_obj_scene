@@ -39,29 +39,9 @@ from losses import loss_dict
 from metrics import psnr
 
 from utils import load_ckpt
-from utils.io import make_dir
-from utils.visualization import get_image_summary_from_vis_data
 
-
-class DistributedSamplerWrapper(torch.utils.data.distributed.DistributedSampler):
-    def __init__(
-            self, sampler,
-            num_replicas: Optional[int] = None,
-            rank: Optional[int] = None,
-            shuffle: bool = True):
-        super(DistributedSamplerWrapper, self).__init__(
-            sampler.dataset, num_replicas, rank, shuffle)
-        # typo:
-        # self.sampler = Sampler
-        self.sampler = sampler
-
-    def __iter__(self):
-        indices = list(self.sampler)
-        indices = indices[self.rank:self.total_size:self.num_replicas]
-        return iter(indices)
-
-    def __len__(self):
-        return len(self.sampler)
+import wandb
+from eval_nerfw import render_to_path
 
 
 class NeRFSystem(LightningModule):
@@ -326,9 +306,11 @@ class NeRFSystem(LightningModule):
         kwargs['val_num'] = self.hparams.num_gpus
         kwargs['use_cache'] = self.hparams.use_cache
         kwargs['num_limit'] = self.hparams.num_limit
+        # !!!!! There is no manual near and far restriction to the dataset. We didn't overwrite near here !!!!!
         self.train_dataset = dataset(split='train' if not self.eval_only else 'val',
                                      img_downscale=self.hparams.img_downscale, **kwargs)
         self.val_dataset = dataset(split='val', img_downscale=self.hparams.img_downscale_val, **kwargs)
+        self.test_dataset = dataset(split='test_train', img_downscale=self.hparams.img_downscale, **kwargs)
 
         # if self.is_learning_pose():
         # NOTE(ethan): self.train_dataset.poses is all the poses, even those in the val dataset
@@ -416,6 +398,15 @@ class NeRFSystem(LightningModule):
             self.log(f'train/{k}', v, prog_bar=True)
         self.log('train/psnr', psnr_, prog_bar=True)
 
+        # wandb log
+        dict_to_log = {}
+        dict_to_log['lr'] = get_learning_rate(self.optimizer)
+        dict_to_log['train/loss'] = loss
+        for k, v in loss_d.items():
+            dict_to_log[f"train/{k}"] = v
+        dict_to_log['train/psnr'] = psnr_
+        wandb.log(dict_to_log)
+
         return loss
 
     def validation_step(self, batch, batch_nb):
@@ -437,34 +428,26 @@ class NeRFSystem(LightningModule):
             loss_d['cce_fine'] = torch.nn.functional.cross_entropy(label_f, batch['labels'].to(torch.long).squeeze())
 
         loss = sum(l for l in loss_d.values())
-        log = {'val_loss': loss}
+        dict_to_log = {'val/loss': loss}
+        self.log('val/loss', loss, prog_bar=True)
         typ = 'fine' if 'rgb_fine' in results else 'coarse'
 
-        # if batch_nb == 0:
-        #     if self.hparams.dataset_name == 'sitcom3D':
-        #         WH = batch['img_wh']
-        #         W, H = WH[0, 0].item(), WH[0, 1].item()
-        #     else:
-        #         W, H = self.hparams.img_wh
-        #     vis_data = {}
-        #     vis_data.update(results)
-        #     vis_data["rgbs"] = rgbs
-        #     vis_data["img_wh"] = [W, H]
-        #     # image = get_image_summary_from_vis_data(vis_data)
-        #     # self.logger.experiment.add_image('val/GT_pred_depth', image, self.global_step)
-
         psnr_ = psnr(results[f'rgb_{typ}'], rgbs)
-        log['val_psnr'] = psnr_
+        dict_to_log['val/psnr'] = psnr_
+        self.log('val/psnr', psnr_, prog_bar=True)
 
-        return log
+        print("Rendering some sample images from the training set...")
+        render_img_name = f"s={self.global_step:06d}_i={batch_nb:03d}"
+        render_path = os.path.join(self.hparams.render_dir, f"{render_img_name}.png")
+        np.random.seed(19)
+        label_colors = np.random.rand(self.hparams.num_classes, 3)
+        _, res_img = render_to_path(path=render_path, dataset=self.test_dataset,
+                                    idx=batch_nb, models=self.models, embeddings=self.embeddings,
+                                    config=self.hparams, label_colors=label_colors)
+        wd_img = wandb.Image(res_img, caption=f"{render_img_name}")
+        wandb.log({f"Renderings_id={batch_nb}": wd_img})
 
-    def validation_epoch_end(self, outputs):
-        mean_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
-        mean_psnr = torch.stack([x['val_psnr'] for x in outputs]).mean()
-
-        self.log('val/loss', mean_loss)
-        self.log('val/psnr', mean_psnr, prog_bar=True)
-        # pass
+        return dict_to_log
 
 
 def main(hparams):
@@ -472,11 +455,14 @@ def main(hparams):
 
     if hparams.resume_name:
         exp_name = hparams.resume_name
+        group_name = exp_name.split('_')[:-1]
+        group_name = '_'.join(group_name) + '_cont'
     else:
         exp_name = hparams.exp_name
         if hparams.predict_label:
             exp_name += '_label'
 
+        group_name = exp_name
         time_string = datetime.datetime.now().strftime("%m-%d-%H-%M-%S")
         exp_name += '_' + time_string
 
@@ -496,11 +482,24 @@ def main(hparams):
 
     # following pytorch lightning convention here
     dir_path = os.path.join(save_dir, exp_name, f"version_{version}")
+    os.makedirs(dir_path, exist_ok=True)
     config = vars(hparams)
     config_save_path = os.path.join(dir_path, 'config.json')
     json_obj = json.dumps(config, indent=2)
     with open(config_save_path, 'w') as f:
         f.write(json_obj)
+
+    run = wandb.init(
+        # Set the project where this run will be logged
+        project="my_nerfw",
+        name=exp_name,
+        # Track hyperparameters and run metadata
+        config=config,
+        group=group_name
+    )
+
+    hparams.render_dir = f"{dir_path}/render_logs"
+    os.makedirs(hparams.render_dir, exist_ok=True)
     system = NeRFSystem(hparams)
 
     checkpoint_filepath = os.path.join(f'{dir_path}/ckpts')
@@ -515,11 +514,11 @@ def main(hparams):
                       resume_from_checkpoint=hparams.ckpt_path,
                       logger=logger,
                       weights_summary=None,
-                      progress_bar_refresh_rate=hparams.refresh_every,
+                      progress_bar_refresh_rate=hparams.bar_update_freq,
                       gpus=hparams.num_gpus,
                       accelerator='ddp' if hparams.num_gpus > 1 else None,
                       num_sanity_val_steps=1,
-                      val_check_interval=int(1000),  # run val every int(X) batches
+                      val_check_interval=hparams.val_freq,  # run val every int(X) batches
                       benchmark=True,
                       accumulate_grad_batches=hparams.accumulate_grad_batches
                       #   profiler="simple" if hparams.num_gpus == 1 else None
