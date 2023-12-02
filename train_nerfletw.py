@@ -243,6 +243,7 @@ class NerfletWSystem(LightningModule):
         # wandb log
         dict_to_log = {}
         dict_to_log['lr'] = get_learning_rate(self.optimizer)
+        dict_to_log['epoch'] = self.current_epoch
         dict_to_log['train/loss'] = loss
         for k, v in loss_d.items():
             dict_to_log[f"train/{k}"] = v

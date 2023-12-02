@@ -401,6 +401,7 @@ class NeRFSystem(LightningModule):
         # wandb log
         dict_to_log = {}
         dict_to_log['lr'] = get_learning_rate(self.optimizer)
+        dict_to_log['epoch'] = self.current_epoch
         dict_to_log['train/loss'] = loss
         for k, v in loss_d.items():
             dict_to_log[f"train/{k}"] = v
@@ -435,6 +436,7 @@ class NeRFSystem(LightningModule):
         psnr_ = psnr(results[f'rgb_{typ}'], rgbs)
         dict_to_log['val/psnr'] = psnr_
         self.log('val/psnr', psnr_, prog_bar=True)
+        wandb.log(dict_to_log)
 
         print("Rendering some sample images from the training set...")
         render_img_name = f"s={self.global_step:06d}_i={batch_nb:03d}"
