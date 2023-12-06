@@ -59,7 +59,8 @@ class NerfletWSystem(LightningModule):
             'coverage_loss': hparams.w_coverage_loss,
             'overlap_loss': hparams.w_overlap_loss,
         }
-        self.loss = loss_dict['nerfletw'](loss_weights=loss_weights, label_only=hparams.label_only)
+        self.loss = loss_dict['nerfletw'](loss_weights=loss_weights, label_only=hparams.label_only,
+                                          max_hitting_parts_per_ray=hparams.max_hitting_parts_per_ray)
 
         self.models_to_train = {}
         self.embeddings = {}

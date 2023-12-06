@@ -263,6 +263,7 @@ def get_parser():
     parser.add_argument('--w_occupancy_loss_ell', type=float, default=0.0001)
     parser.add_argument('--w_coverage_loss', type=float, default=0.01)
     parser.add_argument('--w_overlap_loss', type=float, default=0.01)
+    parser.add_argument('--max_hitting_parts_per_ray', type=int, default=3)
 
     return parser
 
