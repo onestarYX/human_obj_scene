@@ -173,6 +173,7 @@ class NerfletWSystem(LightningModule):
                             predict_density=self.hparams.predict_density,
                             use_fine_nerf=self.hparams.use_fine_nerf,
                             perturb=self.hparams.perturb if version == "train" else 0,
+                            use_associated=self.hparams.use_associated,
                             test_time=version == "val")
 
             for k, v in rendered_ray_chunks.items():

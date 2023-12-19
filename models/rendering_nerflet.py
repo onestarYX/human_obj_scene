@@ -101,7 +101,8 @@ def shifted_cumprod(x, shift: int = 1) -> torch.Tensor:
 
 def render_rays_(typ, model, embeddings,
                  xyz, rays_d, z_vals, ts,
-                 predict_label, white_back=False, predict_density=False):
+                 predict_label, white_back=False,
+                 predict_density=False, use_associated=False):
     pred = get_nerflet_pred(model, embeddings, xyz, rays_d, ts)
 
     '''Rendering. We want:
@@ -130,12 +131,17 @@ def render_rays_(typ, model, embeddings,
     positive_rays = pred['static_positive_rays']
     results[f'static_occ_{typ}'] = static_occ
     results[f'static_ray_associations_{typ}'] = static_ray_associations
-    results[f'static_positive_rays_{typ}'] = pred['static_positive_rays']
+    results[f'static_positive_rays_{typ}'] = positive_rays
     results[f'static_ellipsoid_occ_{typ}'] = pred['static_ellipsoid_occ']
 
     # Compute standalone static/transient rgb/depth/label maps
     # TODO: Might consider just using associated parts to determine occupancy. Here using max to stabilize training
-    static_occ = torch.max(static_occ, dim=-1)[0]
+    # TODO: think about it!!!
+    if use_associated:
+        static_ray_associations_ = static_ray_associations[:, None, None].expand(-1, static_occ.shape[1], -1)
+        static_occ = torch.gather(static_occ, dim=-1, index=static_ray_associations_).squeeze(-1)
+    else:
+        static_occ = torch.max(static_occ, dim=-1)[0]
     static_transmittance = shifted_cumprod(1 - static_occ + 1e-10)
     static_weights = static_occ * static_transmittance
     static_weights = static_weights * (positive_rays[..., None])
@@ -215,6 +221,7 @@ def render_rays(models,
                 predict_density=False,
                 use_fine_nerf=False,
                 perturb=0,
+                use_associated=False,
                 test_time=False,
                 **kwargs
                 ):
@@ -248,7 +255,7 @@ def render_rays(models,
     results.update(render_rays_(typ='coarse', model=model, embeddings=embeddings,
                                 xyz=xyz, rays_d=rays_d, z_vals=z_vals, ts=ts,
                                 predict_label=predict_label, white_back=white_back,
-                                predict_density=predict_density))
+                                predict_density=predict_density, use_associated=use_associated))
 
     if use_fine_nerf:
         assert N_importance != 0
@@ -260,7 +267,7 @@ def render_rays(models,
         results.update(render_rays_(typ='fine', model=model, embeddings=embeddings,
                                     xyz=xyz_fine, rays_d=rays_d_fine, z_vals=z_vals_fine, ts=ts,
                                     predict_label=predict_label, white_back=white_back,
-                                    predict_density=predict_density))
+                                    predict_density=predict_density, use_associated=use_associated))
 
     return results
 
