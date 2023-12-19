@@ -334,6 +334,7 @@ def render_rays(models,
 
     if N_importance > 0:  # sample points for fine model
         z_vals_mid = 0.5 * (z_vals[:, :-1] + z_vals[:, 1:])  # (N_rays, N_samples-1) interval mid points
+        # sample according to coarse weights (N_rays, N_samples-2)
         z_vals_ = sample_pdf(z_vals_mid, results['weights_coarse'][:, 1:-1].detach(),
                              N_importance, det=(perturb == 0))
         # detach so that grad doesn't propogate to weights_coarse from here

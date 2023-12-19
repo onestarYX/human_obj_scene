@@ -49,8 +49,9 @@ class NerfletWSystem(LightningModule):
         self.save_hyperparameters(hparams)
 
         loss_weights = {
-            'color_l': hparams.w_color_l,
-            'beta_l': hparams.w_beta_l,
+            'color_loss_c': hparams.w_color_l,
+            'color_loss_f': hparams.w_color_l,
+            'beta_loss': hparams.w_beta_l,
             'transient_reg': hparams.w_transient_reg,
             'label_cce': hparams.w_label_cce,
             'mask_loss': hparams.w_mask_loss,
@@ -170,6 +171,8 @@ class NerfletWSystem(LightningModule):
                             self.hparams.chunk,  # chunk size is effective in val mode
                             self.train_dataset.white_back,
                             predict_density=self.hparams.predict_density,
+                            use_fine_nerf=self.hparams.use_fine_nerf,
+                            perturb=self.hparams.perturb if version == "train" else 0,
                             test_time=version == "val")
 
             for k, v in rendered_ray_chunks.items():
@@ -233,7 +236,8 @@ class NerfletWSystem(LightningModule):
             if self.hparams.encode_t:
                 psnr_ = psnr(results['combined_rgb_map'], rgbs)
             else:
-                psnr_ = psnr(results['static_rgb_map'], rgbs)
+                # TODO: For now only consider fine nerf, might need to support coarse only
+                psnr_ = psnr(results['static_rgb_map_fine'], rgbs)
 
         self.log('lr', get_learning_rate(self.optimizer))
         self.log('train/loss', loss)
@@ -276,7 +280,8 @@ class NerfletWSystem(LightningModule):
         if self.hparams.encode_t:
             psnr_ = psnr(results['combined_rgb_map'], rgbs)
         else:
-            psnr_ = psnr(results['static_rgb_map'], rgbs)
+            # TODO: For now only consider fine nerf, might need to support coarse only
+            psnr_ = psnr(results['static_rgb_map_fine'], rgbs)
         dict_to_log['val/psnr'] = psnr_
         self.log('val/psnr', psnr_, prog_bar=True)
         wandb.log(dict_to_log)

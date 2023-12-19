@@ -39,7 +39,7 @@ from omegaconf import OmegaConf
 @torch.no_grad()
 def batched_inference(models, embeddings,
                       rays, ts, predict_label, num_classes, N_samples, N_importance, use_disp,
-                      chunk, white_back, predict_density, **kwargs):
+                      chunk, white_back, predict_density, use_fine_nerf, **kwargs):
     """Do batched inference on rays using chunk."""
     B = rays.shape[0]
     results = defaultdict(list)
@@ -57,6 +57,8 @@ def batched_inference(models, embeddings,
                         chunk,
                         white_back,
                         predict_density=predict_density,
+                        use_fine_nerf=use_fine_nerf,
+                        perturb=0,
                         test_time=True,
                         **kwargs)
 
@@ -89,10 +91,12 @@ def render_to_path(path, dataset, idx, models, embeddings, config,
         ts = sample['ts2']
     else:
         ts = sample['ts']
+    # TODO: the arguments of this function can be simplified to only pass config
     results = batched_inference(models, embeddings, rays.cuda(), ts.cuda(),
                                 config.predict_label, config.num_classes,
                                 config.N_samples, config.N_importance, config.use_disp,
-                                config.chunk, dataset.white_back, config.predict_density)
+                                config.chunk, dataset.white_back, config.predict_density,
+                                config.use_fine_nerf)
 
     rows = []
     metrics = {}
@@ -105,13 +109,14 @@ def render_to_path(path, dataset, idx, models, embeddings, config,
     elif config.dataset_name == 'replica' or config.dataset_name == '3dfront':
         w, h = dataset.img_wh
 
+    # TODO: For now only consider fine nerf, might need to support coarse only
     # GT image and predicted combined image
-    ray_associations = results['static_ray_associations'].cpu().numpy().reshape((h, w))
-    positive_rays_mask = results['static_positive_rays'].cpu().numpy().reshape((h, w))
+    ray_associations = results['static_ray_associations_fine'].cpu().numpy().reshape((h, w))
+    positive_rays_mask = results['static_positive_rays_fine'].cpu().numpy().reshape((h, w))
     if config.encode_t:
         img_pred = np.clip(results['combined_rgb_map'].view(h, w, 3).cpu().numpy(), 0, 1)
     else:
-        img_pred = np.clip(results['static_rgb_map'].view(h, w, 3).cpu().numpy(), 0, 1)
+        img_pred = np.clip(results['static_rgb_map_fine'].view(h, w, 3).cpu().numpy(), 0, 1)
     img_pred_ = (img_pred * 255).astype(np.uint8)
     if select_part_idx is not None:
         non_selected_part_mask = np.logical_and(ray_associations != select_part_idx, np.logical_not(positive_rays_mask))
@@ -126,9 +131,9 @@ def render_to_path(path, dataset, idx, models, embeddings, config,
     rows.append(np.concatenate([img_gt_, img_pred_], axis=1))
 
     # Predicted static image and predicted static depth
-    img_static = np.clip(results['static_rgb_map'].view(h, w, 3).cpu().numpy(), 0, 1)
+    img_static = np.clip(results['static_rgb_map_fine'].view(h, w, 3).cpu().numpy(), 0, 1)
     img_static_ = (img_static * 255).astype(np.uint8)
-    static_depth = results['static_depth'].cpu().numpy()
+    static_depth = results['static_depth_fine'].cpu().numpy()
     depth_static = np.array(np_visualize_depth(static_depth, cmap=cv2.COLORMAP_BONE))
     depth_static = depth_static.reshape(h, w, 1)
     depth_static_ = np.repeat(depth_static, 3, axis=2)
@@ -166,7 +171,7 @@ def render_to_path(path, dataset, idx, models, embeddings, config,
     ray_association_map = part_colors[ray_associations]
     ray_association_map[~positive_rays_mask] = 0
     ray_association_map = (ray_association_map * 255).astype(np.uint8)
-    obj_mask = results['static_mask'].cpu().numpy()
+    obj_mask = results['static_mask_fine'].cpu().numpy()
     obj_mask = obj_mask[..., np.newaxis] * np.array([[1, 1, 1]])
     obj_mask = obj_mask.reshape((h, w, 3))
     obj_mask = (obj_mask * 255).astype(np.uint8)
