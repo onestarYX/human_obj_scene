@@ -50,7 +50,15 @@ class NeRFSystem(LightningModule):
         # self.hparams = hparams
         self.save_hyperparameters(hparams)
 
-        self.loss = loss_dict['nerfw'](coef=1)
+        loss_weights = {
+            'c_l': hparams.w_color_l,
+            'f_l': hparams.w_color_l,
+            'b_l': hparams.w_beta_l,
+            's_l': hparams.w_transient_reg,
+            'cce_coarse': hparams.w_label_cce,
+            'cce_fine': hparams.w_label_cce
+        }
+        self.loss = loss_dict['nerfw'](coef=loss_weights, predict_label=hparams.predict_label)
 
         self.models_to_train = []
         self.embedding_xyz = PosEmbedding(hparams.N_emb_xyz - 1, hparams.N_emb_xyz)
@@ -312,19 +320,6 @@ class NeRFSystem(LightningModule):
         self.val_dataset = dataset(split='val', img_downscale=self.hparams.img_downscale_val, **kwargs)
         self.test_dataset = dataset(split='test_train', img_downscale=self.hparams.img_downscale, **kwargs)
 
-        # if self.is_learning_pose():
-        # NOTE(ethan): self.train_dataset.poses is all the poses, even those in the val dataset
-        train_poses = torch.FloatTensor(self.train_dataset.poses)  # (N, 3, 4)
-        train_poses = torch.cat([train_poses, torch.zeros_like(train_poses[:, 0:1, :])], dim=1)
-        train_poses[:, 3, 3] = 1.0
-        self.learn_f = LearnFocal(len(train_poses), self.hparams.learn_f).cuda()
-        self.learn_p = LearnPose(len(train_poses), self.hparams.learn_r, self.hparams.learn_t,
-                                 init_c2w=train_poses).cuda()
-        self.models_mm = {}
-        self.models_mm["learn_f"] = self.learn_f
-        self.models_mm["learn_p"] = self.learn_p
-        self.models_mm_to_train += [self.learn_f]
-        self.models_mm_to_train += [self.learn_p]
 
     def setup(self, stage):
         pass
@@ -355,18 +350,7 @@ class NeRFSystem(LightningModule):
 
     def rays_from_batch(self, batch):
         if self.is_learning_pose():
-            directions = batch['directions'].squeeze()
-            ts2 = batch['ts2'].squeeze()
-            f = self.models_mm["learn_f"]()[ts2]
-            cameras, c2w_delta = self.models_mm["learn_p"]()
-            c2w = cameras[ts2]
-            directions_new = directions / f
-            rays_o, rays_d = get_rays_batch_version(directions_new, c2w)
-            # NOTE(ethan): nerfmm won't work when near_far_version == "cam" due to ray near/far computation
-            nears, fars, ray_mask = self.train_dataset.get_nears_fars_from_rays_or_cam(rays_o, rays_d, c2w=None)
-            rays_t = batch['ts'].squeeze().unsqueeze(-1)  # hacky way to get [N, 1]
-            rays = torch.cat([rays_o, rays_d, nears, fars, rays_t], 1)
-            ray_mask = ray_mask.squeeze()
+            raise NotImplementedError
         else:
             rays = batch['rays'].squeeze()
             ray_mask = batch['ray_mask'].squeeze()
@@ -379,13 +363,9 @@ class NeRFSystem(LightningModule):
             ts = batch['ts2']
         else:
             ts = batch['ts']
+        labels = batch['labels'].to(torch.long).squeeze()
         results = self.forward(rays, ts, version="train")
-        loss_d = self.loss(results, rgbs, ray_mask)
-        if self.hparams.predict_label:
-            label_c = results['label_coarse']
-            loss_d['cce_coarse'] = torch.nn.functional.cross_entropy(label_c, batch['labels'].to(torch.long).squeeze())
-            label_f = results['label_fine']
-            loss_d['cce_fine'] = torch.nn.functional.cross_entropy(label_f, batch['labels'].to(torch.long).squeeze())
+        loss_d = self.loss(results, rgbs, labels, ray_mask)
         loss = sum(l for l in loss_d.values())
 
         with torch.no_grad():
@@ -417,18 +397,14 @@ class NeRFSystem(LightningModule):
             ts = batch['ts2']
         else:
             ts = batch['ts']
+        labels = batch['labels'].to(torch.long).squeeze()
         rays = rays.squeeze()  # (H*W, 3)
         rgbs = rgbs.squeeze()  # (H*W, 3)
         ts = ts.squeeze()  # (H*W)
         results = self.forward(rays, ts, version="val")
-        loss_d = self.loss(results, rgbs, ray_mask)
-        if self.hparams.predict_label:
-            label_c = results['label_coarse']
-            loss_d['cce_coarse'] = torch.nn.functional.cross_entropy(label_c, batch['labels'].to(torch.long).squeeze())
-            label_f = results['label_fine']
-            loss_d['cce_fine'] = torch.nn.functional.cross_entropy(label_f, batch['labels'].to(torch.long).squeeze())
-
+        loss_d = self.loss(results, rgbs, labels, ray_mask)
         loss = sum(l for l in loss_d.values())
+
         dict_to_log = {'val/loss': loss}
         self.log('val/loss', loss, prog_bar=True)
         typ = 'fine' if 'rgb_fine' in results else 'coarse'
