@@ -85,7 +85,7 @@ def compute_iou(pred, gt, num_cls):
 
 
 def render_to_path(path, dataset, idx, models, embeddings, config,
-                   label_colors, part_colors, select_part_idx=None):
+                   label_colors, part_colors, write_to_path=True, select_part_idx=None):
     sample = dataset[idx]
     rays = sample['rays']
     if 'ts2' in sample:
@@ -179,7 +179,8 @@ def render_to_path(path, dataset, idx, models, embeddings, config,
     rows.append(np.concatenate([ray_association_map, obj_mask], axis=1))
 
     res_img = np.concatenate(rows, axis=0)
-    imageio.imwrite(path, res_img)
+    if write_to_path:
+        imageio.imwrite(path, res_img)
 
     return metrics, res_img
 

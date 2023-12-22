@@ -295,7 +295,8 @@ class NerfletWSystem(LightningModule):
         part_colors = np.random.rand(self.hparams.num_parts, 3)
         _, res_img = render_to_path(path=render_path, dataset=self.test_dataset,
                                     idx=batch_nb, models=self.models, embeddings=self.embeddings,
-                                    config=self.hparams, label_colors=label_colors, part_colors=part_colors)
+                                    config=self.hparams, label_colors=label_colors, part_colors=part_colors,
+                                    write_to_path=False)
         wd_img = wandb.Image(res_img, caption=f"{render_img_name}")
         wandb.log({f"Renderings_id={batch_nb}": wd_img})
 
