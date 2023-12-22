@@ -356,10 +356,10 @@ def main(hparams):
 
     checkpoint_filepath = f'{dir_path}/ckpts'
     checkpoint_callback = ModelCheckpoint(dirpath=checkpoint_filepath,
-                                          monitor='val/psnr',
+                                          monitor='train/psnr',
                                           mode='max',
-                                          save_top_k=-1,
-                                          every_n_epochs=1)
+                                          save_top_k=5,
+                                          save_last=True)
 
     trainer = Trainer(max_epochs=hparams.num_epochs,
                       callbacks=[checkpoint_callback],
