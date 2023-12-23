@@ -76,6 +76,9 @@ class NeRFSystem(LightningModule):
             self.models_to_train += [self.embedding_t]
 
         self.nerf_coarse = NeRF('coarse',
+                                D=hparams.num_hidden_layers,
+                                W=hparams.dim_hidden_layers,
+                                skips=hparams.skip_layers,
                                 in_channels_xyz=6 * hparams.N_emb_xyz + 3,
                                 in_channels_dir=6 * hparams.N_emb_dir + 3,
                                 encode_appearance=False,
@@ -85,6 +88,9 @@ class NeRFSystem(LightningModule):
         self.models = {'coarse': self.nerf_coarse}
         if hparams.N_importance > 0:
             self.nerf_fine = NeRF('fine',
+                                  D=hparams.num_hidden_layers,
+                                  W=hparams.dim_hidden_layers,
+                                  skips=hparams.skip_layers,
                                   in_channels_xyz=6 * hparams.N_emb_xyz + 3,
                                   in_channels_dir=6 * hparams.N_emb_dir + 3,
                                   encode_appearance=hparams.encode_a,
