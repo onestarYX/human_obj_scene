@@ -118,7 +118,7 @@ def render_rays(models,
         result: dictionary containing final rgb and depth maps for coarse and fine models
     """
 
-    def inference(results, model, xyz, z_vals, predict_label=False, num_classes=80,
+    def inference(results, model, typ, xyz, z_vals, predict_label=False, num_classes=80,
                   test_time=False, validation_version=False, **kwargs):
         """
         Helper function that performs model inference.
@@ -132,7 +132,6 @@ def render_rays(models,
             z_vals: (N_rays, N_samples_) depths of the sampled positions
             test_time: test time or not
         """
-        typ = model.typ
         N_samples_ = xyz.shape[1]
         xyz_ = rearrange(xyz, 'n1 n2 c -> (n1 n2) c', c=3)
 
@@ -330,7 +329,7 @@ def render_rays(models,
     xyz_coarse = rays_o + rays_d * rearrange(z_vals, 'n1 n2 -> n1 n2 1')
 
     output_transient = False
-    inference(results, models['coarse'], xyz_coarse, z_vals, predict_label, num_classes, test_time, **kwargs)
+    inference(results, models['coarse'], 'coarse', xyz_coarse, z_vals, predict_label, num_classes, test_time, **kwargs)
 
     if N_importance > 0:  # sample points for fine model
         z_vals_mid = 0.5 * (z_vals[:, :-1] + z_vals[:, 1:])  # (N_rays, N_samples-1) interval mid points
@@ -354,6 +353,6 @@ def render_rays(models,
             t_embedded = kwargs['t_embedded']
         else:
             t_embedded = embeddings['t'](ts)
-    inference(results, model, xyz_fine, z_vals, predict_label, num_classes, test_time, **kwargs)
+    inference(results, model, 'fine', xyz_fine, z_vals, predict_label, num_classes, test_time, **kwargs)
 
     return results

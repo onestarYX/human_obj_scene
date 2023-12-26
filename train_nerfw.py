@@ -42,6 +42,7 @@ from utils import load_ckpt
 
 import wandb
 from eval_nerfw import render_to_path
+from train_nerfletw import count_parameters
 
 
 class NeRFSystem(LightningModule):
@@ -87,20 +88,23 @@ class NeRFSystem(LightningModule):
                                 use_view_dirs=hparams.use_view_dirs)
         self.models = {'coarse': self.nerf_coarse}
         if hparams.N_importance > 0:
-            self.nerf_fine = NeRF('fine',
-                                  D=hparams.num_hidden_layers,
-                                  W=hparams.dim_hidden_layers,
-                                  skips=hparams.skip_layers,
-                                  in_channels_xyz=6 * hparams.N_emb_xyz + 3,
-                                  in_channels_dir=6 * hparams.N_emb_dir + 3,
-                                  encode_appearance=hparams.encode_a,
-                                  in_channels_a=hparams.N_a,
-                                  encode_transient=hparams.encode_t,
-                                  in_channels_t=hparams.N_tau,
-                                  predict_label=self.hparams.predict_label,
-                                  num_classes=self.hparams.num_classes,
-                                  beta_min=hparams.beta_min,
-                                  use_view_dirs=hparams.use_view_dirs)
+            if hparams.fine_coarse_same:
+                self.nerf_fine = self.nerf_coarse
+            else:
+                self.nerf_fine = NeRF('fine',
+                                      D=hparams.num_hidden_layers,
+                                      W=hparams.dim_hidden_layers,
+                                      skips=hparams.skip_layers,
+                                      in_channels_xyz=6 * hparams.N_emb_xyz + 3,
+                                      in_channels_dir=6 * hparams.N_emb_dir + 3,
+                                      encode_appearance=hparams.encode_a,
+                                      in_channels_a=hparams.N_a,
+                                      encode_transient=hparams.encode_t,
+                                      in_channels_t=hparams.N_tau,
+                                      predict_label=self.hparams.predict_label,
+                                      num_classes=self.hparams.num_classes,
+                                      beta_min=hparams.beta_min,
+                                      use_view_dirs=hparams.use_view_dirs)
             self.models['fine'] = self.nerf_fine
         self.models_to_train += [self.models]
         self.models_mm_to_train = []
@@ -110,6 +114,24 @@ class NeRFSystem(LightningModule):
         self.near_min = 0.1
         self.appearance_id = None
         self.height = None
+
+        num_params = 0
+        for item in self.models_to_train:
+            if isinstance(item, list):
+                for model in item:
+                    num_model_params = count_parameters(model)
+                    print(f"# of params in some unnamed model----{num_model_params}")
+                    num_params += num_model_params
+            elif isinstance(item, dict):
+                for model_name, model in item.items():
+                    num_model_params = count_parameters(model)
+                    print(f"# of params in {model_name}----{num_model_params}")
+                    num_params += num_model_params
+            else:
+                num_model_params = count_parameters(item)
+                print(f"# of params in some unnamed model----{num_model_params}")
+                num_params += num_model_params
+        print(f"Number of parameters in total: {num_params}")
 
     def load_from_ckpt_path(self, ckpt_path):
         """TODO(ethan): move this elsewhere
