@@ -554,7 +554,7 @@ class Sitcom3DDataset(RenderDataset):
                 # throw away the pixels that belong to people
                 non_human_mask = self.all_human_mask < 1
                 # throw away the pixels that are outside the bounding box
-                valid_rays = non_human_mask & self.all_inbbox_ray_mask.squeeze()
+                valid_rays = non_human_mask & self.all_inbbox_ray_mask.squeeze().to(torch.bool)
 
                 self.all_rays = self.all_rays[valid_rays]
                 self.all_directions = self.all_directions[valid_rays]
