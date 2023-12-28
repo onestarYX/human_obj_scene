@@ -256,6 +256,7 @@ def get_parser():
     parser.add_argument('--use_fine_nerf', action='store_true', default=False)
     parser.add_argument('--use_associated', action='store_true', default=False)
     parser.add_argument('--fine_coarse_same', action='store_true', default=False)
+    parser.add_argument('--use_bg_nerf', action='store_true', default=False)
 
     parser.add_argument('--w_color_l', type=float, default=1)
     parser.add_argument('--w_beta_l', type=float, default=1)

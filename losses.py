@@ -90,7 +90,8 @@ class NerfletWLoss(nn.Module):
         self.weights = loss_weights
         self.label_only = label_only
 
-    def forward(self, pred, gt_rgbs, gt_labels, ray_mask, encode_t=True, predict_label=True, loss_pos_ray_ratio=1):
+    def forward(self, pred, gt_rgbs, gt_labels, ray_mask, encode_t=True, predict_label=True,
+                use_bg_nerf=False, obj_mask=None, loss_pos_ray_ratio=1):
         if loss_pos_ray_ratio != 1:
             assert 0 < loss_pos_ray_ratio <= 1
             original_ones_count = ray_mask.sum()
@@ -104,7 +105,6 @@ class NerfletWLoss(nn.Module):
             rand_selected_zero_indices = zero_indices[rand_selected_zero_indices]
             ray_mask[rand_selected_zero_indices] = 1
 
-        ray_mask_sum = ray_mask.sum() + 1e-20
         ret = {}
         if self.label_only:
             label_pred = pred['static_label']
@@ -116,15 +116,39 @@ class NerfletWLoss(nn.Module):
                                                                      gt_labels[inside_rays_mask].to(torch.long))
             return ret
 
+        bg_mask = ~obj_mask
+        if use_bg_nerf and bg_mask.sum() != 0:
+            gt_rgbs_obj = gt_rgbs[obj_mask]
+            ray_mask_obj = ray_mask[obj_mask]
+            gt_labels_obj = gt_labels[obj_mask]
+            gt_rgbs_bg = gt_rgbs[bg_mask]
+            ray_mask_bg = ray_mask[bg_mask]
+            gt_labels_bg = gt_labels[bg_mask]
+
+            ret['color_loss_bg'] = 0.5 * (((pred['rgb_bg'] - gt_rgbs_bg) ** 2) * ray_mask_bg[:, None]).sum() / ray_mask_bg.sum()
+            if predict_label:
+                ret['label_cce_bg'] = torch.nn.functional.cross_entropy(pred['label_bg'],
+                                                                        gt_labels_bg.to(torch.long))
+
+            if obj_mask.sum() == 0:
+                for k, v in ret.items():
+                    ret[k] = self.weights[k] * v
+                return ret
+        else:
+            gt_rgbs_obj = gt_rgbs
+            ray_mask_obj = ray_mask
+            gt_labels_obj = gt_labels
+
+        ray_mask_sum = ray_mask_obj.sum() + 1e-20
         # TODO: for now only consider using fine nerf
         if encode_t:
-            ret['color_loss'] = (((pred['combined_rgb_map'] - gt_rgbs) ** 2 / (2 * pred['beta'].unsqueeze(1) ** 2)) * ray_mask[:, None]).sum() / ray_mask_sum
-            ret['beta_loss'] = 3 + (torch.log(pred['beta']) * ray_mask).sum() / ray_mask_sum  # TODO: what's the difference between this line here and the paper eqn?
+            ret['color_loss'] = (((pred['combined_rgb_map'] - gt_rgbs_obj) ** 2 / (2 * pred['beta'].unsqueeze(1) ** 2)) * ray_mask_obj[:, None]).sum() / ray_mask_sum
+            ret['beta_loss'] = 3 + (torch.log(pred['beta']) * ray_mask_obj).sum() / ray_mask_sum  # TODO: what's the difference between this line here and the paper eqn?
             ret['transient_reg'] = self.lambda_u * pred['transient_occ'].mean()
         else:
             # TODO: Which losses should I count for coarse? Is there duplicate gradient given there is duplicated part of input?
-            ret['color_loss_c'] = 0.5 * (((pred['static_rgb_map_coarse'] - gt_rgbs) ** 2) * ray_mask[:, None]).sum() / ray_mask_sum
-            ret['color_loss_f'] = 0.5 * (((pred['static_rgb_map_fine'] - gt_rgbs) ** 2) * ray_mask[:, None]).sum() / ray_mask_sum
+            ret['color_loss_c'] = 0.5 * (((pred['static_rgb_map_coarse'] - gt_rgbs_obj) ** 2) * ray_mask_obj[:, None]).sum() / ray_mask_sum
+            ret['color_loss_f'] = 0.5 * (((pred['static_rgb_map_fine'] - gt_rgbs_obj) ** 2) * ray_mask_obj[:, None]).sum() / ray_mask_sum
 
         if predict_label:
             if encode_t:
@@ -136,19 +160,19 @@ class NerfletWLoss(nn.Module):
                 ret['label_cce'] = torch.tensor(0, device=label_pred.device)
             else:
                 ret['label_cce'] = torch.nn.functional.cross_entropy(label_pred[inside_rays_mask],
-                                                                     gt_labels[inside_rays_mask].to(torch.long))
+                                                                     gt_labels_obj[inside_rays_mask].to(torch.long))
 
         # Mask loss
-        ret['mask_loss'] = torch.mean((pred['static_mask_fine'] - ray_mask) ** 2)
+        ret['mask_loss'] = torch.mean((pred['static_mask_fine'] - ray_mask_obj) ** 2)
 
         # Occupancy loss
         ray_max_occ = pred['static_occ_fine'].max(-1)[0].max(-1)[0]
-        ret['occupancy_loss'] = torch.nn.functional.binary_cross_entropy(ray_max_occ, ray_mask.to(torch.float32), reduction='mean')
+        ret['occupancy_loss'] = torch.nn.functional.binary_cross_entropy(ray_max_occ, ray_mask_obj.to(torch.float32), reduction='mean')
 
 
         # Occupancy loss for ellipsoids
         ray_max_ell_occ = pred['static_ellipsoid_occ_fine'].max(-1)[0].max(-1)[0]
-        ret['occupancy_loss_ell'] = torch.nn.functional.binary_cross_entropy(ray_max_ell_occ, ray_mask.to(torch.float32), reduction='mean')
+        ret['occupancy_loss_ell'] = torch.nn.functional.binary_cross_entropy(ray_max_ell_occ, ray_mask_obj.to(torch.float32), reduction='mean')
 
         # Coverage loss
         part_ray_max_occ = pred['static_occ_fine'].max(1)[0]

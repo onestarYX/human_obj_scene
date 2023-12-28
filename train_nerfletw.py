@@ -16,7 +16,8 @@ from datasets.front import ThreeDFrontDataset
 from datasets.ray_utils import get_rays_batch_version
 
 # models
-from models.nerflet import Nerflet
+from models.nerflet import Nerflet, BgNeRF
+from models.nerf import PosEmbedding
 from models.rendering_nerflet import render_rays
 
 # optimizer, scheduler, visualization
@@ -59,12 +60,17 @@ class NerfletWSystem(LightningModule):
             'occupancy_loss_ell': hparams.w_occupancy_loss_ell,
             'coverage_loss': hparams.w_coverage_loss,
             'overlap_loss': hparams.w_overlap_loss,
+            'color_loss_bg': hparams.w_color_l,
+            'label_cce_bg': hparams.w_label_cce
         }
         self.loss = loss_dict['nerfletw'](loss_weights=loss_weights, label_only=hparams.label_only,
                                           max_hitting_parts_per_ray=hparams.max_hitting_parts_per_ray)
 
         self.models_to_train = {}
-        self.embeddings = {}
+        self.embedding_xyz = PosEmbedding(hparams.N_emb_xyz - 1, hparams.N_emb_xyz)
+        self.embedding_dir = PosEmbedding(hparams.N_emb_dir - 1, hparams.N_emb_dir)
+        self.embeddings = {'xyz': self.embedding_xyz,
+                           'dir': self.embedding_dir}
         if hparams.encode_a:
             self.embedding_a = torch.nn.Embedding(hparams.N_vocab, hparams.N_a)
             self.embeddings['a'] = self.embedding_a
@@ -88,6 +94,21 @@ class NerfletWSystem(LightningModule):
                                label_only=hparams.label_only, disable_tf=hparams.disable_tf,
                                sharpness=hparams.sharpness, predict_density=hparams.predict_density)
         self.models = {'nerflet': self.nerflet}
+        if hparams.use_bg_nerf:
+            self.bg_nerf = BgNeRF(D=hparams.num_hidden_layers,
+                                  W=hparams.dim_hidden_layers,
+                                  skips=hparams.skip_layers,
+                                  in_channels_xyz=6 * hparams.N_emb_xyz + 3,
+                                  in_channels_dir=6 * hparams.N_emb_dir + 3,
+                                  encode_appearance=hparams.encode_a,
+                                  in_channels_a=hparams.N_a,
+                                  encode_transient=hparams.encode_t,
+                                  in_channels_t=hparams.N_tau,
+                                  predict_label=self.hparams.predict_label,
+                                  num_classes=self.hparams.num_classes,
+                                  beta_min=hparams.beta_min,
+                                  use_view_dirs=hparams.use_view_dirs)
+            self.models['bg_nerf'] = self.bg_nerf
         self.models_to_train.update(self.models)
 
         self.near_min = 0.1
@@ -152,29 +173,31 @@ class NerfletWSystem(LightningModule):
         items.pop("v_num", None)
         return items
 
-    def forward(self, rays, ts, version=None):
+    def forward(self, rays, ts, obj_mask=None, version=None):
         """Do batched inference on rays using chunk."""
         assert version is not None
         B = rays.shape[0]
         results = defaultdict(list)
         for i in range(0, B, self.hparams.chunk):
             rendered_ray_chunks = \
-                render_rays(self.models,
-                            self.embeddings,
-                            rays[i:i + self.hparams.chunk],
-                            ts[i:i + self.hparams.chunk],
-                            self.hparams.predict_label,
-                            self.hparams.num_classes,
-                            self.hparams.N_samples,
-                            self.hparams.use_disp,
-                            self.hparams.N_importance,
-                            self.hparams.chunk,  # chunk size is effective in val mode
-                            self.train_dataset.white_back,
+                render_rays(models=self.models,
+                            embeddings=self.embeddings,
+                            rays=rays[i:i + self.hparams.chunk],
+                            ts=ts[i:i + self.hparams.chunk],
+                            predict_label=self.hparams.predict_label,
+                            num_classes=self.hparams.num_classes,
+                            N_samples=self.hparams.N_samples,
+                            use_disp=self.hparams.use_disp,
+                            N_importance=self.hparams.N_importance,
+                            use_bg_nerf=self.hparams.use_bg_nerf,
+                            obj_mask=obj_mask[i:i + self.hparams.chunk],
+                            white_back=self.train_dataset.white_back,
                             predict_density=self.hparams.predict_density,
                             use_fine_nerf=self.hparams.use_fine_nerf,
                             perturb=self.hparams.perturb if version == "train" else 0,
                             use_associated=self.hparams.use_associated,
-                            test_time=version == "val")
+                            test_time=version == "val"
+                            )
 
             for k, v in rendered_ray_chunks.items():
                 results[k] += [v]
@@ -218,18 +241,21 @@ class NerfletWSystem(LightningModule):
         else:
             rays = batch['rays'].squeeze()
             ray_mask = batch['ray_mask'].squeeze()
-        return rays, ray_mask
+            obj_mask = batch['obj_mask'].squeeze()
+        return rays, ray_mask, obj_mask
 
     def training_step(self, batch, batch_nb):
-        rays, ray_mask = self.rays_from_batch(batch)
+        rays, ray_mask, obj_mask = self.rays_from_batch(batch)
         if 'ts2' in batch:
             ts = batch['ts2']
         else:
             ts = batch['ts']
         rgbs, gt_labels = batch['rgbs'], batch['labels']
-        results = self.forward(rays, ts, version="train")
+        results = self.forward(rays, ts, obj_mask=obj_mask, version="train")
         loss_d = self.loss(results, rgbs, gt_labels, ray_mask,
-                           self.hparams.encode_t, self.hparams.predict_label, self.hparams.loss_pos_ray_ratio)
+                           self.hparams.encode_t, self.hparams.predict_label,
+                           self.hparams.use_bg_nerf, obj_mask,
+                           self.hparams.loss_pos_ray_ratio)
         loss = sum(l for l in loss_d.values())
 
         with torch.no_grad():
@@ -238,7 +264,14 @@ class NerfletWSystem(LightningModule):
                 psnr_ = psnr(results['combined_rgb_map'], rgbs)
             else:
                 # TODO: For now only consider fine nerf, might need to support coarse only
-                psnr_ = psnr(results['static_rgb_map_fine'], rgbs)
+                # TODO: Hack for bg_nerf here
+                if self.hparams.use_bg_nerf:
+                    if obj_mask.sum() != 0:
+                        psnr_ = psnr(results['static_rgb_map_fine'], rgbs[obj_mask])
+                    else:
+                        psnr_ = 0
+                else:
+                    psnr_ = psnr(results['static_rgb_map_fine'], rgbs)
 
         self.log('lr', get_learning_rate(self.optimizer))
         self.log('train/loss', loss)
@@ -259,7 +292,7 @@ class NerfletWSystem(LightningModule):
         return loss
 
     def validation_step(self, batch, batch_nb):
-        rays, ray_mask = self.rays_from_batch(batch)
+        rays, ray_mask, obj_mask = self.rays_from_batch(batch)
         if 'ts2' in batch:
             ts = batch['ts2']
         else:
@@ -269,9 +302,11 @@ class NerfletWSystem(LightningModule):
         rgbs = rgbs.squeeze()  # (H*W, 3)
         ts = ts.squeeze()  # (H*W)
         gt_labels = gt_labels.squeeze()
-        results = self.forward(rays, ts, version="val")
+        results = self.forward(rays, ts, obj_mask=obj_mask, version="val")
         loss_d = self.loss(results, rgbs, gt_labels, ray_mask,
-                           self.hparams.encode_t, self.hparams.predict_label, self.hparams.loss_pos_ray_ratio)
+                           self.hparams.encode_t, self.hparams.predict_label,
+                           self.hparams.use_bg_nerf, obj_mask,
+                           self.hparams.loss_pos_ray_ratio)
         loss = sum(l for l in loss_d.values())
         self.log('val/loss', loss, prog_bar=True)
         dict_to_log = {'val/loss': loss}
@@ -282,7 +317,14 @@ class NerfletWSystem(LightningModule):
             psnr_ = psnr(results['combined_rgb_map'], rgbs)
         else:
             # TODO: For now only consider fine nerf, might need to support coarse only
-            psnr_ = psnr(results['static_rgb_map_fine'], rgbs)
+            # TODO: Hack for bg_nerf here
+            if self.hparams.use_bg_nerf:
+                if obj_mask.sum() != 0:
+                    psnr_ = psnr(results['static_rgb_map_fine'], rgbs[obj_mask])
+                else:
+                    psnr_ = 0
+            else:
+                psnr_ = psnr(results['static_rgb_map_fine'], rgbs)
         dict_to_log['val/psnr'] = psnr_
         self.log('val/psnr', psnr_, prog_bar=True)
         wandb.log(dict_to_log)

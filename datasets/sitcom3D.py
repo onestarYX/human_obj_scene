@@ -152,7 +152,7 @@ class RenderDataset(Dataset):
         K = copy.deepcopy(self.Ks[id_])
         return K
 
-    def get_mask(self, id_):
+    def get_human_mask(self, id_):
         # human mask
         # TODO(ethan): confirm that this works!
         panoptic = np.array(Image.open(os.path.join(self.environment_dir, 'segmentations', 'thing',
@@ -225,15 +225,19 @@ class RenderDataset(Dataset):
                 stuff[i, j] = stuff_cls_mapping[stuff[i, j]]
 
         panoptic = thing
+        obj_mask = np.zeros_like(panoptic)
         for i in range(panoptic.shape[0]):
             for j in range(panoptic.shape[1]):
                 if panoptic[i, j] == 0:
                     panoptic[i, j] = stuff[i, j]
+                else:
+                    obj_mask[i, j] = 1
 
         K = self.get_K(id_)
         img_w, img_h = width_height_from_intr(K)
         panoptic = cv2.resize(panoptic, (img_w, img_h), interpolation=cv2.INTER_NEAREST)
-        return panoptic
+        obj_mask = cv2.resize(obj_mask, (img_w, img_h), interpolation=cv2.INTER_NEAREST)
+        return panoptic, obj_mask
 
     def get_image_paths(self):
         """
@@ -488,38 +492,46 @@ class Sitcom3DDataset(RenderDataset):
                 self.all_rays = []
                 self.all_directions = []
                 self.all_rgbs = []
-                self.all_masks = []
+                self.all_human_mask = []     # human mask
                 self.all_labels = []
-                self.all_ray_mask = []
+                self.all_obj_mask = []  # object mask
+                self.all_inbbox_ray_mask = []  # rays that are inside the estimated bbox. (almost 1 for every ray)
                 for id_ in tqdm(self.img_ids):
                     c2w = torch.FloatTensor(self.get_pose(id_))
                     img = self.get_img(id_)
                     img_h, img_w, _ = img.shape
-                    mask = self.get_mask(id_).astype(float)
-                    label = self.get_panoptic_labels(id_).astype(float)
+                    human_mask = self.get_human_mask(id_).astype(float)
+                    label, obj_mask = self.get_panoptic_labels(id_)
+                    label = label.astype(float)
+                    obj_mask = obj_mask.astype(float)
 
                     img = self.transform(img)  # (3, h, w)
                     img = img.view(3, -1).permute(1, 0)  # (h*w, 3) RGB
-                    mask = self.transform(mask)
-                    mask = mask.view(-1)
+                    human_mask = self.transform(human_mask)
+                    human_mask = human_mask.view(-1).to(torch.int64)
                     label = self.transform(label)
                     label = label.view(-1).to(torch.long)
+                    obj_mask = self.transform(obj_mask)
+                    obj_mask = obj_mask.view(-1).to(torch.bool)
 
                     directions = get_ray_directions(img_h, img_w, self.get_K(id_))
                     rays_o, rays_d = get_rays(directions, c2w)
                     rays_t = id_ * torch.ones(len(rays_o), 1)
                     rays_t2 = self.id_to_idx[id_] * torch.ones(len(rays_o), 1)
 
-                    nears, fars, ray_mask = self.get_nears_fars_from_rays_or_cam(rays_o, rays_d, c2w=c2w)
+                    nears, fars, inbbox_ray_mask = self.get_nears_fars_from_rays_or_cam(rays_o, rays_d, c2w=c2w)
+                    inbbox_ray_mask = inbbox_ray_mask.to(torch.int64)
 
                     self.all_rgbs += [img]
-                    self.all_masks += [mask]
+                    self.all_human_mask += [human_mask]
                     self.all_labels += [label]
+                    self.all_obj_mask += [obj_mask]
+                    # TODO: we don't need to keep inbbox_ray_mask anywhere because we will apply this masking later
                     temp = torch.cat([rays_o, rays_d,
                                       nears,
                                       fars,
                                       rays_t,
-                                      ray_mask],
+                                      inbbox_ray_mask],
                                      1)
                     self.all_rays += [temp]
                     self.all_directions += [torch.cat([directions.view(-1, 3),
@@ -527,29 +539,29 @@ class Sitcom3DDataset(RenderDataset):
                                                        fars,
                                                        rays_t,
                                                        rays_t2,
-                                                       ray_mask],
+                                                       inbbox_ray_mask],
                                                       1)]
-                    self.all_ray_mask += [ray_mask]
+                    self.all_inbbox_ray_mask += [inbbox_ray_mask]
 
                 self.all_rays = torch.cat(self.all_rays, 0)  # ((N_images-1)*h*w, 8)
                 self.all_directions = torch.cat(self.all_directions, 0)  # ((N_images-1)*h*w, 5)
                 self.all_rgbs = torch.cat(self.all_rgbs, 0)  # ((N_images-1)*h*w, 3)
-                self.all_masks = torch.cat(self.all_masks, 0)
+                self.all_human_mask = torch.cat(self.all_human_mask, 0)
                 self.all_labels = torch.cat(self.all_labels, 0)
-                self.all_ray_mask = torch.cat(self.all_ray_mask, 0)
+                self.all_obj_mask = torch.cat(self.all_obj_mask, 0)
+                self.all_inbbox_ray_mask = torch.cat(self.all_inbbox_ray_mask, 0)
 
                 # throw away the pixels that belong to people
-                valid_ray_all_masks = self.all_masks < 1
+                non_human_mask = self.all_human_mask < 1
                 # throw away the pixels that are outside the bounding box
-                valid_rays_all_ray_mask = self.all_ray_mask.squeeze() > 0
-                valid_rays = valid_ray_all_masks & valid_rays_all_ray_mask
+                valid_rays = non_human_mask & self.all_inbbox_ray_mask.squeeze()
 
                 self.all_rays = self.all_rays[valid_rays]
                 self.all_directions = self.all_directions[valid_rays]
                 self.all_rgbs = self.all_rgbs[valid_rays]
-                self.all_masks = self.all_masks[valid_rays]
                 self.all_labels = self.all_labels[valid_rays]
-                self.all_ray_mask = self.all_ray_mask[valid_rays]
+                self.all_obj_mask = self.all_obj_mask[valid_rays]
+                self.all_inbbox_ray_mask = self.all_inbbox_ray_mask[valid_rays]
 
     def define_transforms(self):
         self.transform = T.ToTensor()
@@ -571,6 +583,7 @@ class Sitcom3DDataset(RenderDataset):
                       'ts2': self.all_directions[idx, 6].long(),
                       'rgbs': self.all_rgbs[idx],
                       'labels': self.all_labels[idx],
+                      'obj_mask': self.all_obj_mask[idx],
                       'ray_mask': self.all_rays[idx, 9]}
         elif self.split in ['val', 'test_train']:
             sample = {}
@@ -586,23 +599,25 @@ class Sitcom3DDataset(RenderDataset):
             img = img.view(3, -1).permute(1, 0)  # (h*w, 3) RGB
             sample['rgbs'] = img
 
-            mask = self.get_mask(id_).astype(float)
+            mask = self.get_human_mask(id_).astype(float)
             # TODO: Actually should consider to use human mask when computing psnr for validation images
             sample['human_mask'] = self.transform(mask).view(-1) < 1.0
 
-            label = self.get_panoptic_labels(id_).astype(float)
-            label = self.transform(label).view(-1)
+            label, obj_mask = self.get_panoptic_labels(id_)
+            label = self.transform(label.astype(float)).view(-1)
+            obj_mask = self.transform(obj_mask.astype(float)).view(-1).to(torch.bool)
             sample['labels'] = label
+            sample['obj_mask'] = obj_mask
 
             directions = get_ray_directions(img_h, img_w, self.get_K(id_))
             rays_o, rays_d = get_rays(directions, c2w)
-            nears, fars, ray_mask = self.get_nears_fars_from_rays_or_cam(rays_o, rays_d, c2w=c2w)
+            nears, fars, inbbox_ray_mask = self.get_nears_fars_from_rays_or_cam(rays_o, rays_d, c2w=c2w)
             rays = torch.cat([rays_o, rays_d,
                               nears,
                               fars],
                              1)  # (h*w, 8)
             sample['rays'] = rays
-            sample['ray_mask'] = ray_mask.squeeze()
+            sample['ray_mask'] = inbbox_ray_mask.squeeze()
             sample['directions'] = directions.view(-1, 3)
             sample['ts'] = id_ * torch.ones(len(rays), dtype=torch.long)
             sample['ts2'] = self.id_to_idx[id_] * torch.ones(len(rays), dtype=torch.long)

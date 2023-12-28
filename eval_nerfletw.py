@@ -39,23 +39,24 @@ from omegaconf import OmegaConf
 @torch.no_grad()
 def batched_inference(models, embeddings,
                       rays, ts, predict_label, num_classes, N_samples, N_importance, use_disp,
-                      chunk, white_back, predict_density, use_fine_nerf, use_associated, **kwargs):
+                      chunk, use_bg_nerf, obj_mask, white_back, predict_density, use_fine_nerf, use_associated, **kwargs):
     """Do batched inference on rays using chunk."""
     B = rays.shape[0]
     results = defaultdict(list)
     for chunk_idx in range(0, B, chunk):
         rendered_ray_chunks = \
-            render_rays(models,
-                        embeddings,
-                        rays[chunk_idx:chunk_idx+chunk],
-                        ts[chunk_idx:chunk_idx+chunk] if ts is not None else None,
-                        predict_label,
-                        num_classes,
-                        N_samples,
-                        use_disp,
-                        N_importance,
-                        chunk,
-                        white_back,
+            render_rays(models=models,
+                        embeddings=embeddings,
+                        rays=rays[chunk_idx:chunk_idx+chunk],
+                        ts=ts[chunk_idx:chunk_idx+chunk] if ts is not None else None,
+                        predict_label=predict_label,
+                        num_classes=num_classes,
+                        N_samples=N_samples,
+                        use_disp=use_disp,
+                        N_importance=N_importance,
+                        use_bg_nerf=use_bg_nerf,
+                        obj_mask=obj_mask[chunk_idx:chunk_idx+chunk],
+                        white_back=white_back,
                         predict_density=predict_density,
                         use_fine_nerf=use_fine_nerf,
                         perturb=0,
@@ -92,12 +93,15 @@ def render_to_path(path, dataset, idx, models, embeddings, config,
         ts = sample['ts2']
     else:
         ts = sample['ts']
+    obj_mask = sample['obj_mask']
     # TODO: the arguments of this function can be simplified to only pass config
-    results = batched_inference(models, embeddings, rays.cuda(), ts.cuda(),
-                                config.predict_label, config.num_classes,
-                                config.N_samples, config.N_importance, config.use_disp,
-                                config.chunk, dataset.white_back, config.predict_density,
-                                config.use_fine_nerf, config.use_associated)
+    results = batched_inference(models=models, embeddings=embeddings, rays=rays.cuda(), ts=ts.cuda(),
+                                predict_label=config.predict_label, num_classes=config.num_classes,
+                                N_samples=config.N_samples, N_importance=config.N_importance,
+                                use_disp=config.use_disp, chunk=config.chunk,
+                                use_bg_nerf=config.use_bg_nerf, obj_mask=obj_mask, white_back=dataset.white_back,
+                                predict_density=config.predict_density, use_fine_nerf=config.use_fine_nerf,
+                                use_associated=config.use_associated)
 
     rows = []
     metrics = {}
@@ -111,72 +115,150 @@ def render_to_path(path, dataset, idx, models, embeddings, config,
         w, h = dataset.img_wh
 
     # TODO: For now only consider fine nerf, might need to support coarse only
-    # GT image and predicted combined image
-    ray_associations = results['static_ray_associations_fine'].cpu().numpy().reshape((h, w))
-    positive_rays_mask = results['static_positive_rays_fine'].cpu().numpy().reshape((h, w))
-    if config.encode_t:
-        img_pred = np.clip(results['combined_rgb_map'].view(h, w, 3).cpu().numpy(), 0, 1)
-    else:
-        img_pred = np.clip(results['static_rgb_map_fine'].view(h, w, 3).cpu().numpy(), 0, 1)
-    img_pred_ = (img_pred * 255).astype(np.uint8)
-    if select_part_idx is not None:
-        non_selected_part_mask = np.logical_and(ray_associations != select_part_idx, np.logical_not(positive_rays_mask))
-        img_pred_[non_selected_part_mask] = 255
-    rgbs = sample['rgbs']
-    img_gt = rgbs.view(h, w, 3)
-    psnr_ = psnr(img_gt, img_pred).item()
-    print(f"PSNR: {psnr_}")
-    metrics['psnr'] = psnr_
-    img_gt_ = np.clip(img_gt.cpu().numpy(), 0, 1)
-    img_gt_ = (img_gt_ * 255).astype(np.uint8)
-    rows.append(np.concatenate([img_gt_, img_pred_], axis=1))
 
-    # Predicted static image and predicted static depth
-    img_static = np.clip(results['static_rgb_map_fine'].view(h, w, 3).cpu().numpy(), 0, 1)
-    img_static_ = (img_static * 255).astype(np.uint8)
-    static_depth = results['static_depth_fine'].cpu().numpy()
-    depth_static = np.array(np_visualize_depth(static_depth, cmap=cv2.COLORMAP_BONE))
-    depth_static = depth_static.reshape(h, w, 1)
-    depth_static_ = np.repeat(depth_static, 3, axis=2)
-    rows.append(np.concatenate([img_static_, depth_static_], axis=1))
-
-    # gt label and pred label
-    if config.predict_label:
-        label_gt = sample['labels'].to(torch.long).cpu().numpy()
-        label_map_gt = label_colors[label_gt].reshape((h, w, 3))
-        label_map_gt = (label_map_gt * 255).astype(np.uint8)
+    if config.use_bg_nerf:
+        # GT image and predicted combined image
+        ray_associations = results['static_ray_associations_fine'].cpu().numpy()
+        positive_rays_mask = results['static_positive_rays_fine'].cpu().numpy()
         if config.encode_t:
-            label_pred = results['combined_label']
+            img_pred_obj = results['combined_rgb_map']
         else:
-            label_pred = results['static_label']
-        label_pred = torch.argmax(label_pred, dim=1).to(torch.long).cpu().numpy()
-        label_map_pred = label_colors[label_pred].reshape((h, w, 3))
-        label_map_pred[~positive_rays_mask] = 0
-        label_map_pred = (label_map_pred * 255).astype(np.uint8)
-        iou = compute_iou(label_pred, label_gt, config.num_classes)
-        metrics['iou_combined'] = iou
-        print(f"Semantic iou: {iou}")
-        rows.append(np.concatenate([label_map_gt, label_map_pred], axis=1))
+            img_pred_obj = results['static_rgb_map_fine']
+        img_pred_bg = results['rgb_bg']
+        img_pred = torch.zeros(h * w, 3, device=img_pred_obj.device)
+        img_pred[obj_mask] = img_pred_obj
+        img_pred[~obj_mask] = img_pred_bg
+        img_pred_ = (img_pred.cpu().numpy() * 255).astype(np.uint8).reshape(h, w, 3)
 
+        rgbs = sample['rgbs']
+        img_gt = rgbs.view(h, w, 3)
+        psnr_ = psnr(img_gt, img_pred.view(h, w, 3)).item()
+        print(f"PSNR: {psnr_}")
+        metrics['psnr'] = psnr_
+        img_gt_ = np.clip(img_gt.cpu().numpy(), 0, 1)
+        img_gt_ = (img_gt_ * 255).astype(np.uint8)
+        rows.append(np.concatenate([img_gt_, img_pred_], axis=1))
+
+        # obj img and bg img
+        img_part_obj = torch.zeros(h * w, 3, device=img_pred_obj.device)
+        img_part_obj[obj_mask] = img_pred_obj
+        img_part_obj = (img_part_obj.cpu().numpy() * 255).astype(np.uint8).reshape(h, w, 3)
+        img_part_bg = torch.zeros(h * w, 3, device=img_pred_obj.device)
+        img_part_bg[~obj_mask] = img_pred_bg
+        img_part_bg = (img_part_bg.cpu().numpy() * 255).astype(np.uint8).reshape(h, w, 3)
+        rows.append(np.concatenate([img_part_obj, img_part_bg], axis=1))
+
+        # Predicted static image and predicted static depth
+        placeholder = np.zeros((h, w, 3), dtype=np.uint8)
+        depth_obj = results['static_depth_fine']
+        depth_bg = results['depth_bg']
+        static_depth = torch.zeros(h * w, device=depth_obj.device)
+        static_depth[obj_mask] = depth_obj
+        static_depth[~obj_mask] = depth_bg
+        static_depth = static_depth.cpu().numpy()
+        static_depth_map = np.array(np_visualize_depth(static_depth, cmap=cv2.COLORMAP_BONE))
+        static_depth_map = static_depth_map.reshape(h, w, 1)
+        static_depth_map = np.repeat(static_depth_map, 3, axis=2)
+        rows.append(np.concatenate([placeholder, static_depth_map], axis=1))
+
+        # gt label and pred label
+        if config.predict_label:
+            label_gt = sample['labels'].to(torch.long).cpu().numpy()
+            label_map_gt = label_colors[label_gt].reshape((h, w, 3))
+            label_map_gt = (label_map_gt * 255).astype(np.uint8)
+            if config.encode_t:
+                label_pred_obj = results['combined_label']
+            else:
+                label_pred_obj = results['static_label']
+            label_pred_obj = torch.argmax(label_pred_obj, dim=1).to(torch.long).cpu().numpy()
+            label_pred_obj = label_colors[label_pred_obj]
+            label_pred_obj[~positive_rays_mask] = 0
+            label_pred_bg = torch.argmax(results['label_bg'], dim=1).to(torch.long).cpu().numpy()
+            label_pred_bg = label_colors[label_pred_bg]
+            label_map_pred = np.zeros((h * w, 3))
+            label_map_pred[obj_mask.cpu().numpy()] = label_pred_obj
+            label_map_pred[~obj_mask.cpu().numpy()] = label_pred_bg
+
+            label_map_pred = (label_map_pred * 255).astype(np.uint8).reshape(h, w, 3)
+            rows.append(np.concatenate([label_map_gt, label_map_pred], axis=1))
+
+            if config.encode_t:
+                raise NotImplementedError
+
+        ray_association_map = np.zeros((h * w, 3))
+        ray_associations_ = part_colors[ray_associations]
+        ray_associations_[~positive_rays_mask] = 0
+        ray_association_map[obj_mask.cpu().numpy()] = ray_associations_
+        ray_association_map = (ray_association_map * 255).astype(np.uint8).reshape(h, w, 3)
+        rows.append(np.concatenate([ray_association_map, placeholder], axis=1))
+
+    else:   # No bg nerf involved
+        # GT image and predicted combined image
+        ray_associations = results['static_ray_associations_fine'].cpu().numpy().reshape((h, w))
+        positive_rays_mask = results['static_positive_rays_fine'].cpu().numpy().reshape((h, w))
         if config.encode_t:
-            label_static_pred = torch.argmax(results['static_label'], dim=1).to(torch.long).cpu().numpy()
-            label_map_static_pred = label_colors[label_static_pred].reshape((h, w, 3))
-            label_map_static_pred = (label_map_static_pred * 255).astype(np.uint8)
-            metrics['iou_static'] = compute_iou(label_static_pred, label_gt, config.num_classes)
+            img_pred = results['combined_rgb_map'].view(h, w, 3).cpu().numpy()
+        else:
+            img_pred = results['static_rgb_map_fine'].view(h, w, 3).cpu().numpy()
+        img_pred_ = (img_pred * 255).astype(np.uint8)
+        if select_part_idx is not None:
+            non_selected_part_mask = np.logical_and(ray_associations != select_part_idx, np.logical_not(positive_rays_mask))
+            img_pred_[non_selected_part_mask] = 255
+        rgbs = sample['rgbs']
+        img_gt = rgbs.view(h, w, 3)
+        psnr_ = psnr(img_gt, img_pred).item()
+        print(f"PSNR: {psnr_}")
+        metrics['psnr'] = psnr_
+        img_gt_ = np.clip(img_gt.cpu().numpy(), 0, 1)
+        img_gt_ = (img_gt_ * 255).astype(np.uint8)
+        rows.append(np.concatenate([img_gt_, img_pred_], axis=1))
 
-            label_transient_pred = torch.argmax(results['transient_label'], dim=1).to(torch.long).cpu().numpy()
-            label_map_transient_pred = label_colors[label_transient_pred].reshape((h, w, 3))
-            label_map_transient_pred = (label_map_transient_pred * 255).astype(np.uint8)
-            rows.append(np.concatenate([label_map_static_pred, label_map_transient_pred], axis=1))
+        # Predicted static image and predicted static depth
+        img_static = np.clip(results['static_rgb_map_fine'].view(h, w, 3).cpu().numpy(), 0, 1)
+        img_static_ = (img_static * 255).astype(np.uint8)
+        static_depth = results['static_depth_fine'].cpu().numpy()
+        static_depth_map = np.array(np_visualize_depth(static_depth, cmap=cv2.COLORMAP_BONE))
+        static_depth_map = static_depth_map.reshape(h, w, 1)
+        static_depth_map = np.repeat(static_depth_map, 3, axis=2)
+        rows.append(np.concatenate([img_static_, static_depth_map], axis=1))
 
-    ray_association_map = part_colors[ray_associations]
-    ray_association_map[~positive_rays_mask] = 0
-    ray_association_map = (ray_association_map * 255).astype(np.uint8)
-    obj_mask = results['static_mask_fine'].cpu().numpy()
-    obj_mask = obj_mask[..., np.newaxis] * np.array([[1, 1, 1]])
-    obj_mask = obj_mask.reshape((h, w, 3))
-    obj_mask = (obj_mask * 255).astype(np.uint8)
-    rows.append(np.concatenate([ray_association_map, obj_mask], axis=1))
+        # gt label and pred label
+        if config.predict_label:
+            label_gt = sample['labels'].to(torch.long).cpu().numpy()
+            label_map_gt = label_colors[label_gt].reshape((h, w, 3))
+            label_map_gt = (label_map_gt * 255).astype(np.uint8)
+            if config.encode_t:
+                label_pred = results['combined_label']
+            else:
+                label_pred = results['static_label']
+            label_pred = torch.argmax(label_pred, dim=1).to(torch.long).cpu().numpy()
+            label_map_pred = label_colors[label_pred].reshape((h, w, 3))
+            label_map_pred[~positive_rays_mask] = 0
+            label_map_pred = (label_map_pred * 255).astype(np.uint8)
+            iou = compute_iou(label_pred, label_gt, config.num_classes)
+            metrics['iou_combined'] = iou
+            print(f"Semantic iou: {iou}")
+            rows.append(np.concatenate([label_map_gt, label_map_pred], axis=1))
+
+            if config.encode_t:
+                label_static_pred = torch.argmax(results['static_label'], dim=1).to(torch.long).cpu().numpy()
+                label_map_static_pred = label_colors[label_static_pred].reshape((h, w, 3))
+                label_map_static_pred = (label_map_static_pred * 255).astype(np.uint8)
+                metrics['iou_static'] = compute_iou(label_static_pred, label_gt, config.num_classes)
+
+                label_transient_pred = torch.argmax(results['transient_label'], dim=1).to(torch.long).cpu().numpy()
+                label_map_transient_pred = label_colors[label_transient_pred].reshape((h, w, 3))
+                label_map_transient_pred = (label_map_transient_pred * 255).astype(np.uint8)
+                rows.append(np.concatenate([label_map_static_pred, label_map_transient_pred], axis=1))
+
+        ray_association_map = part_colors[ray_associations]
+        ray_association_map[~positive_rays_mask] = 0
+        ray_association_map = (ray_association_map * 255).astype(np.uint8)
+        obj_mask = results['static_mask_fine'].cpu().numpy()
+        obj_mask = obj_mask[..., np.newaxis] * np.array([[1, 1, 1]])
+        obj_mask = obj_mask.reshape((h, w, 3))
+        obj_mask = (obj_mask * 255).astype(np.uint8)
+        rows.append(np.concatenate([ray_association_map, obj_mask], axis=1))
 
     res_img = np.concatenate(rows, axis=0)
     if write_to_path:
