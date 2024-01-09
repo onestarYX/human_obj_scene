@@ -543,6 +543,71 @@ def render_rays(models,
     return results
 
 
+def compose_nerflet_bgnerf(models,
+                           embeddings,
+                           rays,
+                           ts,
+                           predict_label,
+                           num_classes=80,
+                           N_samples=64,
+                           use_disp=False,
+                           N_importance=0,
+                           white_back=False,
+                           predict_density=False,
+                           use_fine_nerf=False,
+                           perturb=0,
+                           use_associated=False,
+                           test_time=False,
+                           **kwargs):
+
+    raw_results = {}
+    results = {}
+    # bgnerf
+    raw_results.update(render_rays_bgNerf(model=models['bg_nerf'], embeddings=embeddings,
+                                      rays=rays, ts=ts, predict_label=predict_label,
+                                      num_classes=num_classes, N_samples=N_samples,
+                                      use_disp=use_disp, perturb=perturb,
+                                      white_back=white_back, test_time=test_time))
+
+    xyz, rays_d, z_vals = get_input_from_rays(rays, N_samples, use_disp, perturb)
+    raw_results.update(render_rays_nerflets(typ='coarse', model=models['nerflet'], embeddings=embeddings,
+                                        xyz=xyz, rays_d=rays_d, z_vals=z_vals, ts=ts,
+                                        predict_label=predict_label, white_back=white_back,
+                                        predict_density=predict_density, use_associated=use_associated))
+
+    if use_fine_nerf:
+        assert N_importance != 0
+        coarse_weights = raw_results['static_weights_coarse'][:, 1:-1].detach()
+        xyz_fine, rays_d_fine, z_vals_fine = get_input_from_rays(rays, N_samples, use_disp, perturb,
+                                                                 N_importance, z_vals_from_coarse=z_vals,
+                                                                 coarse_weights=coarse_weights)
+
+        raw_results.update(render_rays_nerflets(typ='fine', model=models['nerflet'], embeddings=embeddings,
+                                            xyz=xyz_fine, rays_d=rays_d_fine, z_vals=z_vals_fine, ts=ts,
+                                            predict_label=predict_label, white_back=white_back,
+                                            predict_density=predict_density, use_associated=use_associated))
+
+
+    nerflet_weights = raw_results['static_mask_fine']
+    nerflet_rgb = raw_results['static_rgb_map_fine']
+    nerflet_label = raw_results['static_label']
+    bg_rgb = raw_results['rgb_bg']
+    bg_label = raw_results['label_bg']
+
+    comp_rgb = nerflet_weights.unsqueeze(-1) * nerflet_rgb + (1 - nerflet_weights).unsqueeze(-1) * bg_rgb
+    results['comp_rgb'] = comp_rgb
+
+    nerflet_mask = nerflet_weights > 0.5
+    results['nerflet_mask'] = nerflet_mask
+    comp_label = torch.zeros_like(bg_label)
+    nerflet_mask_ = nerflet_mask.unsqueeze(-1).expand(-1, num_classes)
+    comp_label[nerflet_mask_] = nerflet_label[nerflet_mask_]
+    comp_label[~nerflet_mask_] = bg_label[~nerflet_mask_]
+    results['comp_label'] = comp_label
+
+    return results
+
+
 def get_input_from_rays(rays, N_samples, use_disp, perturb, N_importance=0, z_vals_from_coarse=None, coarse_weights=None):
     # Decompose the inputs
     N_rays = rays.shape[0]

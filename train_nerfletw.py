@@ -165,8 +165,7 @@ class NerfletWSystem(LightningModule):
         load_ckpt(self.embedding_a, ckpt_path, model_name="embedding_a")
         load_ckpt(self.embedding_t, ckpt_path, model_name="embedding_t")
         load_ckpt(self.nerflet, ckpt_path, model_name="nerflet")
-        load_ckpt(self.learn_f, ckpt_path, model_name="learn_f")
-        load_ckpt(self.learn_p, ckpt_path, model_name="learn_p")
+        load_ckpt(self.bg_nerf, ckpt_path, model_name="bg_nerf")
 
     def get_progress_bar_dict(self):
         items = super().get_progress_bar_dict()
