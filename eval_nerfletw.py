@@ -12,7 +12,7 @@ from models.nerf import (
     PosEmbedding,
     NeRF
 )
-from models.nerflet import Nerflet
+from models.nerflet import Nerflet, BgNeRF
 from models.rendering_nerflet import (
     render_rays
 )
@@ -34,6 +34,7 @@ import argparse
 from pathlib import Path
 import json
 from omegaconf import OmegaConf
+import pickle
 
 
 @torch.no_grad()
@@ -86,7 +87,8 @@ def compute_iou(pred, gt, num_cls):
 
 
 def render_to_path(path, dataset, idx, models, embeddings, config,
-                   label_colors, part_colors, write_to_path=True, select_part_idx=None):
+                   label_colors, part_colors, write_to_path=True,
+                   save_results=False, save_path=None, select_part_idx=None):
     sample = dataset[idx]
     rays = sample['rays']
     if 'ts2' in sample:
@@ -102,6 +104,14 @@ def render_to_path(path, dataset, idx, models, embeddings, config,
                                 use_bg_nerf=config.use_bg_nerf, obj_mask=obj_mask, white_back=dataset.white_back,
                                 predict_density=config.predict_density, use_fine_nerf=config.use_fine_nerf,
                                 use_associated=config.use_associated)
+
+    if save_results:
+        res_to_save = {}
+        res_to_save['static_label'] = torch.argmax(results['static_label'], dim=1).to(torch.long).cpu().numpy()
+        res_to_save['static_ray_associations_fine'] = results['static_ray_associations_fine'].cpu().numpy()
+        res_to_save['static_positive_rays_fine'] = results['static_positive_rays_fine'].cpu().numpy()
+        with open(save_path, 'wb') as f:
+            pickle.dump(res_to_save, f)
 
     rows = []
     metrics = {}
@@ -277,12 +287,17 @@ if __name__ == '__main__':
     parser.add_argument('--num_parts', type=int, default=-1)
     parser.add_argument('--num_images', type=int, default=-1)
     parser.add_argument('--split', type=str, default='val')
+    parser.add_argument('--save_results', action='store_true', default=False)
+    parser.add_argument('--save_dir', type=str, default='results/eval')
     parser.add_argument("opts", nargs=argparse.REMAINDER)
     args = parser.parse_args()
 
     exp_dir = Path(args.exp_dir)
     output_dir = exp_dir / args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
+    if args.save_results:
+        save_dir = exp_dir / args.save_dir
+        save_dir.mkdir(parents=True, exist_ok=True)
 
     config_path = exp_dir / 'config.json'
     with open(config_path, 'r') as f:
@@ -327,6 +342,7 @@ if __name__ == '__main__':
     disable_tf = config.disable_tf if 'disable_tf' in config else False
     bbox = dataset.bbox if hasattr(dataset, 'bbox') else None
     sharpness = config.sharpness if 'sharpness' in config else 100
+    models = {}
     nerflet = Nerflet(D=config.num_hidden_layers, W=config.dim_hidden_layers, skips=config.skip_layers,
                       N_emb_xyz=config.N_emb_xyz, N_emb_dir=config.N_emb_dir,
                       encode_a=config.encode_a, encode_t=config.encode_t, predict_label=config.predict_label,
@@ -337,7 +353,23 @@ if __name__ == '__main__':
                       label_only=config.label_only, disable_tf=disable_tf,
                       sharpness=sharpness, predict_density=config.predict_density).cuda()
     load_ckpt(nerflet, args.use_ckpt, model_name='nerflet')
-    models = {'nerflet': nerflet}
+    models['nerflet'] = nerflet
+    if config.use_bg_nerf:
+        bg_nerf = BgNeRF(D=config.num_hidden_layers,
+                         W=config.dim_hidden_layers,
+                         skips=config.skip_layers,
+                         in_channels_xyz=6 * config.N_emb_xyz + 3,
+                         in_channels_dir=6 * config.N_emb_dir + 3,
+                         encode_appearance=config.encode_a,
+                         in_channels_a=config.N_a,
+                         encode_transient=config.encode_t,
+                         in_channels_t=config.N_tau,
+                         predict_label=config.predict_label,
+                         num_classes=config.num_classes,
+                         beta_min=config.beta_min,
+                         use_view_dirs=config.use_view_dirs).cuda()
+        load_ckpt(bg_nerf, args.use_ckpt, model_name="bg_nerf")
+        models['bg_nerf'] = bg_nerf
 
     psnrs = []
     np.random.seed(19)
@@ -354,23 +386,25 @@ if __name__ == '__main__':
                 if args.num_parts != -1 and j >= args.num_parts:
                     continue
                 print(f"Rendering part {j}")
-                path = output_dir / f"frame_{i:03d}"
-                path.mkdir(exist_ok=True)
-                path = path / f"part_{j}.png"
-                render_to_path(path, dataset=dataset, idx=i, models=models, embeddings=embeddings,
+                render_img_path = output_dir / f"frame_{i:03d}"
+                render_img_path.mkdir(exist_ok=True)
+                render_img_path = render_img_path / f"part_{j}.png"
+                render_to_path(render_img_path, dataset=dataset, idx=i, models=models, embeddings=embeddings,
                                config=config, label_colors=label_colors, part_colors=part_colors,
                                select_part_idx=j)
         elif args.select_part_idx is not None:
-            path = output_dir / f"{i:03d}"
-            path.mkdir(exist_ok=True)
-            path = path / f"{args.select_part_idx}.png"
-            render_to_path(path, dataset=dataset, idx=i, models=models, embeddings=embeddings,
+            render_img_path = output_dir / f"{i:03d}"
+            render_img_path.mkdir(exist_ok=True)
+            render_img_path = render_img_path / f"{args.select_part_idx}.png"
+            render_to_path(render_img_path, dataset=dataset, idx=i, models=models, embeddings=embeddings,
                            config=config, label_colors=label_colors, part_colors=part_colors,
                            select_part_idx=args.select_part_idx)
         else:
-            path = output_dir / f"{i:03d}.png"
-            metrics, _ = render_to_path(path, dataset=dataset, idx=i, models=models, embeddings=embeddings,
-                                        config=config, label_colors=label_colors, part_colors=part_colors)
+            render_img_path = output_dir / f"{i:03d}.png"
+            save_results_path = save_dir / f"{i:03d}.pkl"
+            metrics, _ = render_to_path(render_img_path, dataset=dataset, idx=i, models=models, embeddings=embeddings,
+                                        config=config, label_colors=label_colors, part_colors=part_colors,
+                                        save_results=args.save_results, save_path=save_results_path)
             psnrs.append(metrics['psnr'])
             if 'iou_combined' in metrics:
                 iou_combined.append(metrics['iou_combined'])
