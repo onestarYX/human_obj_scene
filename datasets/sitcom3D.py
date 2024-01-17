@@ -604,7 +604,7 @@ class Sitcom3DDataset(RenderDataset):
             sample['human_mask'] = self.transform(mask).view(-1) < 1.0
 
             label, obj_mask = self.get_panoptic_labels(id_)
-            label = self.transform(label.astype(float)).view(-1)
+            label = self.transform(label).view(-1).to(torch.long)
             obj_mask = self.transform(obj_mask.astype(float)).view(-1).to(torch.bool)
             sample['labels'] = label
             sample['obj_mask'] = obj_mask

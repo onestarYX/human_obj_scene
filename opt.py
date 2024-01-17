@@ -59,7 +59,7 @@ def get_parser():
 
     parser.add_argument('--environment_dir', type=str, required=False, help='directory to the environment')
     parser.add_argument('--dataset_name', type=str, default='sitcom3D',
-                        choices=['blender', 'sitcom3D', 'replica', '3dfront'],
+                        choices=['blender', 'sitcom3D', 'replica', '3dfront', 'kitti360'],
                         help='which dataset to train/val')
     # for blender
     parser.add_argument('--data_perturb', nargs="+", type=str, default=[],

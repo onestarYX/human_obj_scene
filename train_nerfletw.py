@@ -13,6 +13,7 @@ from datasets.sitcom3D import Sitcom3DDataset
 from datasets.blender import BlenderDataset
 from datasets.replica import ReplicaDataset
 from datasets.front import ThreeDFrontDataset
+from datasets.kitti360 import Kitti360Dataset
 from datasets.ray_utils import get_rays_batch_version
 
 # models
@@ -139,6 +140,13 @@ class NerfletWSystem(LightningModule):
             self.test_dataset = dataset(split='test_train', img_downscale=self.hparams.img_downscale,
                                         near=self.hparams.near, **kwargs)
             self.scene_bbox = self.train_dataset.bbox
+        elif self.hparams.dataset_name == 'kitti360':
+            self.train_dataset = Kitti360Dataset(root_dir=self.hparams.environment_dir, split='train',
+                                                 img_downscale=self.hparams.img_downscale)
+            self.val_dataset = Kitti360Dataset(root_dir=self.hparams.environment_dir, split='val',
+                                               img_downscale=self.hparams.img_downscale_val)
+            self.test_dataset = Kitti360Dataset(root_dir=self.hparams.environment_dir, split='test_train',
+                                                img_downscale=self.hparams.img_downscale)
         elif self.hparams.dataset_name == 'blender':
             self.train_dataset = BlenderDataset(root_dir=self.hparams.environment_dir,
                                                 img_wh=self.hparams.img_wh, split='train')

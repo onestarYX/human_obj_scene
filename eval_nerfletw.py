@@ -121,7 +121,7 @@ def render_to_path(path, dataset, idx, models, embeddings, config,
         w, h = sample['img_wh']
     elif config.dataset_name == 'blender':
         w, h = config.img_wh
-    elif config.dataset_name == 'replica' or config.dataset_name == '3dfront':
+    elif config.dataset_name in ['replica', '3dfront', 'kitti360']:
         w, h = dataset.img_wh
 
     # TODO: For now only consider fine nerf, might need to support coarse only
