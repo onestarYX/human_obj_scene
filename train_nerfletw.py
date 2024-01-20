@@ -349,6 +349,9 @@ class NerfletWSystem(LightningModule):
         wd_img = wandb.Image(res_img, caption=f"{render_img_name}")
         wandb.log({f"Renderings_id={batch_nb}": wd_img})
 
+        # if batch_nb == 0:
+
+
         return dict_to_log
 
 

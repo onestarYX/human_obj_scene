@@ -4,7 +4,7 @@ from collections import defaultdict
 
 # models
 from models.nerf import PosEmbedding
-from models.nerflet import Nerflet
+from models.nerflet import Nerflet, BgNeRF
 from models.rendering_nerflet import (
     get_input_from_rays,
     get_nerflet_pred
@@ -125,16 +125,34 @@ if __name__ == '__main__':
         embeddings['t'] = embedding_t
     bbox = dataset.bbox if hasattr(dataset, 'bbox') else None
     sharpness = config.sharpness if 'sharpness' in config else 100
+    models = {}
     nerflet = Nerflet(D=config.num_hidden_layers, W=config.dim_hidden_layers, skips=config.skip_layers,
                       N_emb_xyz=config.N_emb_xyz, N_emb_dir=config.N_emb_dir,
                       encode_a=config.encode_a, encode_t=config.encode_t, predict_label=config.predict_label,
                       num_classes=config.num_classes, M=config.num_parts,
                       disable_ellipsoid=config.disable_ellipsoid,
                       scale_min=config.scale_min, scale_max=config.scale_max,
-                      use_spread_out_bias=config.use_spread_out_bias,
-                      bbox=bbox, label_only=config.label_only, disable_tf=config.disable_tf,
+                      use_spread_out_bias=config.use_spread_out_bias, bbox=bbox,
+                      label_only=config.label_only, disable_tf=config.disable_tf,
                       sharpness=sharpness, predict_density=config.predict_density).cuda()
-    load_ckpt(nerflet, ckpt_path, model_name='nerflet')
+    load_ckpt(nerflet, args.use_ckpt, model_name='nerflet')
+    models['nerflet'] = nerflet
+    if config.use_bg_nerf:
+        bg_nerf = BgNeRF(D=config.num_hidden_layers,
+                         W=config.dim_hidden_layers,
+                         skips=config.skip_layers,
+                         in_channels_xyz=6 * config.N_emb_xyz + 3,
+                         in_channels_dir=6 * config.N_emb_dir + 3,
+                         encode_appearance=config.encode_a,
+                         in_channels_a=config.N_a,
+                         encode_transient=config.encode_t,
+                         in_channels_t=config.N_tau,
+                         predict_label=config.predict_label,
+                         num_classes=config.num_classes,
+                         beta_min=config.beta_min,
+                         use_view_dirs=config.use_view_dirs).cuda()
+        load_ckpt(bg_nerf, args.use_ckpt, model_name="bg_nerf")
+        models['bg_nerf'] = bg_nerf
 
     # Prepare colors for each part
     np.random.seed(19)

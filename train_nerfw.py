@@ -16,6 +16,7 @@ from einops import repeat
 import json
 
 from datasets.sitcom3D import Sitcom3DDataset
+from datasets.kitti360 import Kitti360Dataset
 from datasets.ray_utils import get_ray_directions, get_rays, get_rays_batch_version
 
 # models
@@ -335,18 +336,26 @@ class NeRFSystem(LightningModule):
         return results
 
     def init_datasets(self):
-        dataset = Sitcom3DDataset
-        kwargs = {'environment_dir': self.hparams.environment_dir,
-                  'near_far_version': self.hparams.near_far_version}
-        # kwargs['img_downscale'] = self.hparams.img_downscale
-        kwargs['val_num'] = self.hparams.num_gpus
-        kwargs['use_cache'] = self.hparams.use_cache
-        kwargs['num_limit'] = self.hparams.num_limit
-        # !!!!! There is no manual near and far restriction to the dataset. We didn't overwrite near here !!!!!
-        self.train_dataset = dataset(split='train' if not self.eval_only else 'val',
-                                     img_downscale=self.hparams.img_downscale, **kwargs)
-        self.val_dataset = dataset(split='val', img_downscale=self.hparams.img_downscale_val, **kwargs)
-        self.test_dataset = dataset(split='test_train', img_downscale=self.hparams.img_downscale, **kwargs)
+        if self.hparams.dataset_name == 'sitcom3D':
+            dataset = Sitcom3DDataset
+            kwargs = {'environment_dir': self.hparams.environment_dir,
+                      'near_far_version': self.hparams.near_far_version}
+            # kwargs['img_downscale'] = self.hparams.img_downscale
+            kwargs['val_num'] = self.hparams.num_gpus
+            kwargs['use_cache'] = self.hparams.use_cache
+            kwargs['num_limit'] = self.hparams.num_limit
+            # !!!!! There is no manual near and far restriction to the dataset. We didn't overwrite near here !!!!!
+            self.train_dataset = dataset(split='train' if not self.eval_only else 'val',
+                                         img_downscale=self.hparams.img_downscale, **kwargs)
+            self.val_dataset = dataset(split='val', img_downscale=self.hparams.img_downscale_val, **kwargs)
+            self.test_dataset = dataset(split='test_train', img_downscale=self.hparams.img_downscale, **kwargs)
+        elif self.hparams.dataset_name == 'kitti360':
+            self.train_dataset = Kitti360Dataset(root_dir=self.hparams.environment_dir, split='train',
+                                                 img_downscale=self.hparams.img_downscale)
+            self.val_dataset = Kitti360Dataset(root_dir=self.hparams.environment_dir, split='val',
+                                               img_downscale=self.hparams.img_downscale_val)
+            self.test_dataset = Kitti360Dataset(root_dir=self.hparams.environment_dir, split='test_train',
+                                                img_downscale=self.hparams.img_downscale)
 
 
     def setup(self, stage):
@@ -444,14 +453,26 @@ class NeRFSystem(LightningModule):
 
         print("Rendering some sample images from the training set...")
         render_img_name = f"s={self.global_step:06d}_i={batch_nb:03d}"
-        render_path = os.path.join(self.hparams.render_dir, f"{render_img_name}.png")
+        render_dir = os.path.join(self.hparams.render_dir, 'train')
+        os.makedirs(render_dir, exist_ok=True)
+        render_path = os.path.join(render_dir, f"{render_img_name}.png")
         np.random.seed(19)
         label_colors = np.random.rand(self.hparams.num_classes, 3)
         _, res_img = render_to_path(path=render_path, dataset=self.test_dataset,
                                     idx=batch_nb, models=self.models, embeddings=self.embeddings,
                                     config=self.hparams, label_colors=label_colors)
         wd_img = wandb.Image(res_img, caption=f"{render_img_name}")
-        wandb.log({f"Renderings_id={batch_nb}": wd_img})
+        wandb.log({f"train_rendering/Renderings_id={batch_nb}": wd_img})
+
+        print("Rendering some sample images from the validation set...")
+        render_dir = os.path.join(self.hparams.render_dir, 'val')
+        os.makedirs(render_dir, exist_ok=True)
+        render_path = os.path.join(render_dir, f"{render_img_name}.png")
+        _, res_img = render_to_path(path=render_path, dataset=self.val_dataset,
+                                    idx=batch_nb, models=self.models, embeddings=self.embeddings,
+                                    config=self.hparams, label_colors=label_colors)
+        wd_img = wandb.Image(res_img, caption=f"{render_img_name}")
+        wandb.log({f"val_rendering/Renderings_id={batch_nb}": wd_img})
 
         return dict_to_log
 
