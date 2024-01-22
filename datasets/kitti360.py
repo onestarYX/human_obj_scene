@@ -185,7 +185,7 @@ class Kitti360Dataset(Dataset):
             sample = {'rays': self.all_rays[idx, :8],
                       'ts': self.all_rays[idx, 8].long(),
                       'rgbs': self.all_rgbs[idx],
-                      'labels': 0,
+                      'labels': self.all_labels[idx],
                       'ray_mask': self.all_masks[idx],
                       'obj_mask': self.all_obj_masks[idx]}
 

@@ -533,8 +533,8 @@ def main(hparams):
     checkpoint_callback = ModelCheckpoint(dirpath=checkpoint_filepath,
                                           monitor='val/psnr',
                                           mode='max',
-                                          save_top_k=-1,
-                                          every_n_epochs=1)
+                                          save_top_k=5,
+                                          save_last=True)
 
     trainer = Trainer(max_epochs=hparams.num_epochs,
                       callbacks=[checkpoint_callback],
@@ -545,8 +545,8 @@ def main(hparams):
                       gpus=hparams.num_gpus,
                       accelerator='ddp' if hparams.num_gpus > 1 else None,
                       num_sanity_val_steps=1,
-                      val_check_interval=hparams.val_freq,  # run val every int(X) batches
-                      limit_val_batches=10,
+                      val_check_interval=hparams.val_freq if hparams.val_freq < 1 else int(hparams.val_freq),
+                      limit_val_batches=5,
                       benchmark=True,
                       accumulate_grad_batches=hparams.accumulate_grad_batches
                       #   profiler="simple" if hparams.num_gpus == 1 else None
