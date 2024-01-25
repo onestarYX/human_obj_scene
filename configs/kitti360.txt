@@ -11,3 +11,6 @@ num_epochs=200
 val_freq=0.2
 bar_update_freq=100
 num_classes=20
+near=0.1
+far=12
+scale_max=5

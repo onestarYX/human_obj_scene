@@ -12,13 +12,15 @@ from .kitti_labels import labels as labels_dict
 import random
 
 class Kitti360Dataset(Dataset):
-    def __init__(self, root_dir, split='train', img_downscale=1):
+    def __init__(self, root_dir, split='train', img_downscale=1, near=0.5, far=12):
         self.root_dir = Path(root_dir)
         self.split = split
 
         self.img_downscale = img_downscale
         assert 1408 % img_downscale == 0 and 376 % img_downscale == 0, "Invalid img_downscale!"
         self.img_wh = (1408 // img_downscale, 376 // img_downscale)
+        self.near = near
+        self.far = far
         self.define_transform()
         self.read_meta()
         self.white_back = True
@@ -59,7 +61,7 @@ class Kitti360Dataset(Dataset):
         x_max = -1e10
         y_max = -1e10
         z_max = -1e10
-        for i in range(frame_start, frame_end, 1):
+        for i in range(frame_start, frame_end + 1, 1):
             pose = self.cam_poses[i]
             x_min = min(pose[0, 3], x_min)
             x_max = max(pose[0, 3], x_max)
@@ -76,7 +78,7 @@ class Kitti360Dataset(Dataset):
         z_range = z_max - z_min
         xyz_range = np.array([x_range, y_range, z_range])
         print(f"Cam range: {xyz_range}")
-        for i in range(frame_start, frame_end):
+        for i in range(frame_start, frame_end + 1):
             self.cam_poses[i][:3, 3] -= center
 
     def remap_label(self, label_map):
@@ -122,8 +124,6 @@ class Kitti360Dataset(Dataset):
         self.normalize_cam_poses(frame_start=250, frame_end=300)
 
         # bounds, common for all scenes
-        self.near = 0.1
-        self.far = 12.0
         self.bounds = np.array([self.near, self.far])
         
         # ray directions for all pixels, same for all images (same H, W, focal)

@@ -142,11 +142,14 @@ class NerfletWSystem(LightningModule):
             self.scene_bbox = self.train_dataset.bbox
         elif self.hparams.dataset_name == 'kitti360':
             self.train_dataset = Kitti360Dataset(root_dir=self.hparams.environment_dir, split='train',
-                                                 img_downscale=self.hparams.img_downscale)
+                                                 img_downscale=self.hparams.img_downscale,
+                                                 near=self.hparams.near, far=self.hparams.far)
             self.val_dataset = Kitti360Dataset(root_dir=self.hparams.environment_dir, split='val',
-                                               img_downscale=self.hparams.img_downscale_val)
+                                               img_downscale=self.hparams.img_downscale_val,
+                                               near=self.hparams.near, far=self.hparams.far)
             self.test_dataset = Kitti360Dataset(root_dir=self.hparams.environment_dir, split='test_train',
-                                                img_downscale=self.hparams.img_downscale)
+                                                img_downscale=self.hparams.img_downscale,
+                                                near=self.hparams.near, far=self.hparams.far)
         elif self.hparams.dataset_name == 'blender':
             self.train_dataset = BlenderDataset(root_dir=self.hparams.environment_dir,
                                                 img_wh=self.hparams.img_wh, split='train')

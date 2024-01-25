@@ -21,6 +21,7 @@ from datasets.sitcom3D import Sitcom3DDataset
 from datasets.blender import BlenderDataset
 from datasets.replica import ReplicaDataset
 from datasets.front import ThreeDFrontDataset
+from datasets.kitti360 import Kitti360Dataset
 import numpy as np
 
 from metrics import psnr
@@ -325,6 +326,10 @@ if __name__ == '__main__':
         dataset = ThreeDFrontDataset(root_dir=config.environment_dir,
                                      img_downscale=config.img_downscale, split=args.split,
                                      near=config.near, far=config.far)
+    elif config.dataset_name == 'kitti360':
+        dataset = Kitti360Dataset(root_dir=config.environment_dir, split=args.split,
+                                  img_downscale=config.img_downscale,
+                                  near=config.near, far=config.far)
 
     embedding_xyz = PosEmbedding(config.N_emb_xyz - 1, config.N_emb_xyz)
     embedding_dir = PosEmbedding(config.N_emb_dir - 1, config.N_emb_dir)
