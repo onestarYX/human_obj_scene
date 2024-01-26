@@ -12,7 +12,7 @@ from .kitti_labels import labels as labels_dict
 import random
 
 class Kitti360Dataset(Dataset):
-    def __init__(self, root_dir, split='train', img_downscale=1, near=0.5, far=12):
+    def __init__(self, root_dir, split='train', img_downscale=1, near=0.5, far=12, frame_start=250, frame_end=300):
         self.root_dir = Path(root_dir)
         self.split = split
 
@@ -21,6 +21,8 @@ class Kitti360Dataset(Dataset):
         self.img_wh = (1408 // img_downscale, 376 // img_downscale)
         self.near = near
         self.far = far
+        self.frame_start = frame_start
+        self.frame_end = frame_end
         self.define_transform()
         self.read_meta()
         self.white_back = True
@@ -54,14 +56,14 @@ class Kitti360Dataset(Dataset):
             cam_poses[frame_idx] = pose
         return cam_poses
 
-    def normalize_cam_poses(self, frame_start, frame_end):
+    def normalize_cam_poses(self):
         x_min = 1e10
         y_min = 1e10
         z_min = 1e10
         x_max = -1e10
         y_max = -1e10
         z_max = -1e10
-        for i in range(frame_start, frame_end + 1, 1):
+        for i in range(self.frame_start, self.frame_end + 1, 1):
             pose = self.cam_poses[i]
             x_min = min(pose[0, 3], x_min)
             x_max = max(pose[0, 3], x_max)
@@ -77,9 +79,17 @@ class Kitti360Dataset(Dataset):
         y_range = y_max - y_min
         z_range = z_max - z_min
         xyz_range = np.array([x_range, y_range, z_range])
+        self.xyz_range = xyz_range
         print(f"Cam range: {xyz_range}")
-        for i in range(frame_start, frame_end + 1):
+        for i in range(self.frame_start, self.frame_end + 1):
             self.cam_poses[i][:3, 3] -= center
+
+    def rescale_scene(self, bound=5):
+        max_range = np.max(self.xyz_range)
+        scale_factor = max_range / bound
+        for i in range(self.frame_start, self.frame_end):
+            self.cam_poses[i][:3, 3] /= scale_factor
+        self.xyz_range /= scale_factor
 
     def remap_label(self, label_map):
         old_id_max = label_map.max()
@@ -121,7 +131,8 @@ class Kitti360Dataset(Dataset):
         self.K[0, 2] /= self.img_downscale
         self.K[1, 2] /= self.img_downscale
         self.cam_poses = self.read_cam_poses()
-        self.normalize_cam_poses(frame_start=250, frame_end=300)
+        self.normalize_cam_poses()
+        self.rescale_scene()
 
         # bounds, common for all scenes
         self.bounds = np.array([self.near, self.far])
