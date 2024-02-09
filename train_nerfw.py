@@ -457,8 +457,9 @@ class NeRFSystem(LightningModule):
         self.log('val/psnr', psnr_, prog_bar=True)
         wandb.log(dict_to_log)
 
-        print("Rendering some sample images from the training set...")
-        render_img_name = f"s={self.global_step:06d}_i={batch_nb:03d}"
+        sample_img_idx = self.test_dataset.img_paths[batch_nb].stem
+        render_img_name = f"s={self.global_step:06d}_i={batch_nb:03d}_{sample_img_idx}"
+        print(f"Rendering sample image {render_img_name} from the training set...")
         render_dir = os.path.join(self.hparams.render_dir, 'train')
         os.makedirs(render_dir, exist_ok=True)
         render_path = os.path.join(render_dir, f"{render_img_name}.png")
@@ -470,7 +471,9 @@ class NeRFSystem(LightningModule):
         wd_img = wandb.Image(res_img, caption=f"{render_img_name}")
         wandb.log({f"train_rendering/Renderings_id={batch_nb}": wd_img})
 
-        print("Rendering some sample images from the validation set...")
+        sample_img_idx = self.val_dataset.img_paths[batch_nb].stem
+        render_img_name = f"s={self.global_step:06d}_i={batch_nb:03d}_{sample_img_idx}"
+        print(f"Rendering sample image {render_img_name} from the validation set...")
         render_dir = os.path.join(self.hparams.render_dir, 'val')
         os.makedirs(render_dir, exist_ok=True)
         render_path = os.path.join(render_dir, f"{render_img_name}.png")

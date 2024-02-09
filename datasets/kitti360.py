@@ -12,9 +12,12 @@ from .kitti_labels import labels as labels_dict
 import random
 
 class Kitti360Dataset(Dataset):
-    def __init__(self, root_dir, split='train', img_downscale=1, near=0.5, far=12,
-                 frame_start=250, frame_end=300, scene_bound=1):
+    def __init__(self, root_dir, split='train', img_downscale=1, near=0.5, far=12, scene_bound=1):
         self.root_dir = Path(root_dir)
+        frame_start = int(self.root_dir.stem.split('_')[-2])
+        frame_end = int(self.root_dir.stem.split('_')[-1])
+        self.frame_start = frame_start
+        self.frame_end = frame_end
         self.split = split
 
         self.img_downscale = img_downscale
@@ -22,8 +25,6 @@ class Kitti360Dataset(Dataset):
         self.img_wh = (1408 // img_downscale, 376 // img_downscale)
         self.near = near
         self.far = far
-        self.frame_start = frame_start
-        self.frame_end = frame_end
         self.scene_bound = scene_bound
         self.define_transform()
         self.read_meta()
@@ -108,15 +109,19 @@ class Kitti360Dataset(Dataset):
         self.img_paths = []
         for file in self.img_dir.iterdir():
             self.img_paths.append(file)
+        random.seed(19)
         random.shuffle(self.img_paths)
         num_train_imgs = int(len(self.img_paths) * 0.8)
-        if self.split == 'train' or self.split == 'test_train':
+        if self.split == 'train':
             self.img_paths = self.img_paths[:num_train_imgs]
+        elif self.split == 'test_train':
+            self.img_paths = self.img_paths[:num_train_imgs]
+
         elif self.split == 'val':
             self.img_paths = self.img_paths[num_train_imgs:]
         else:
             raise NotImplementedError
-        self.img_paths.sort(key=lambda x: x.name)
+        # self.img_paths.sort(key=lambda x: x.name)
 
         self.labels_dir = self.root_dir / 'semantic'
         self.labels_remapping = {}

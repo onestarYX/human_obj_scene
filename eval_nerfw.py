@@ -157,7 +157,7 @@ def render_to_path(path, dataset, idx, models, embeddings, config,
             rows.append(np.concatenate([label_map_static_pred, label_map_transient_pred], axis=1))
 
     res_img = np.concatenate(rows, axis=0)
-    imageio.imwrite(path, res_img)
+    # imageio.imwrite(path, res_img)
 
     return metrics, res_img
 
