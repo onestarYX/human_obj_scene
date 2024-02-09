@@ -329,7 +329,7 @@ if __name__ == '__main__':
     elif config.dataset_name == 'kitti360':
         dataset = Kitti360Dataset(root_dir=config.environment_dir, split=args.split,
                                   img_downscale=config.img_downscale,
-                                  near=config.near, far=config.far)
+                                  near=config.near, far=config.far, scene_bound=config.scene_bound)
 
     embedding_xyz = PosEmbedding(config.N_emb_xyz - 1, config.N_emb_xyz)
     embedding_dir = PosEmbedding(config.N_emb_dir - 1, config.N_emb_dir)

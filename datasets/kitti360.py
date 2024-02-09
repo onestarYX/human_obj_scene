@@ -12,7 +12,8 @@ from .kitti_labels import labels as labels_dict
 import random
 
 class Kitti360Dataset(Dataset):
-    def __init__(self, root_dir, split='train', img_downscale=1, near=0.5, far=12, frame_start=250, frame_end=300):
+    def __init__(self, root_dir, split='train', img_downscale=1, near=0.5, far=12,
+                 frame_start=250, frame_end=300, scene_bound=1):
         self.root_dir = Path(root_dir)
         self.split = split
 
@@ -23,6 +24,7 @@ class Kitti360Dataset(Dataset):
         self.far = far
         self.frame_start = frame_start
         self.frame_end = frame_end
+        self.scene_bound = scene_bound
         self.define_transform()
         self.read_meta()
         self.white_back = True
@@ -84,12 +86,13 @@ class Kitti360Dataset(Dataset):
         for i in range(self.frame_start, self.frame_end + 1):
             self.cam_poses[i][:3, 3] -= center
 
-    def rescale_scene(self, bound=5):
+    def rescale_scene(self):
         max_range = np.max(self.xyz_range)
-        scale_factor = max_range / bound
+        scale_factor = max_range / self.scene_bound
         for i in range(self.frame_start, self.frame_end):
             self.cam_poses[i][:3, 3] /= scale_factor
         self.xyz_range /= scale_factor
+        print(f"After rescaling, cam range: {self.xyz_range}")
 
     def remap_label(self, label_map):
         old_id_max = label_map.max()

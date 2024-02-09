@@ -351,11 +351,17 @@ class NeRFSystem(LightningModule):
             self.test_dataset = dataset(split='test_train', img_downscale=self.hparams.img_downscale, **kwargs)
         elif self.hparams.dataset_name == 'kitti360':
             self.train_dataset = Kitti360Dataset(root_dir=self.hparams.environment_dir, split='train',
-                                                 img_downscale=self.hparams.img_downscale)
+                                                 img_downscale=self.hparams.img_downscale,
+                                                 near=self.hparams.near, far=self.hparams.far,
+                                                 scene_bound=self.hparams.scene_bound)
             self.val_dataset = Kitti360Dataset(root_dir=self.hparams.environment_dir, split='val',
-                                               img_downscale=self.hparams.img_downscale_val)
+                                               img_downscale=self.hparams.img_downscale_val,
+                                               near=self.hparams.near, far=self.hparams.far,
+                                               scene_bound=self.hparams.scene_bound)
             self.test_dataset = Kitti360Dataset(root_dir=self.hparams.environment_dir, split='test_train',
-                                                img_downscale=self.hparams.img_downscale)
+                                                img_downscale=self.hparams.img_downscale,
+                                                near=self.hparams.near, far=self.hparams.far,
+                                                scene_bound=self.hparams.scene_bound)
 
 
     def setup(self, stage):

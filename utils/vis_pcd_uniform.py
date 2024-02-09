@@ -64,7 +64,7 @@ def estimate_ellipsoid(model, embeddings, rays, ts, N_samples, use_disp, chunk):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--exp_dir', type=str, required=True)
-    parser.add_argument('--output_dir', type=str, default='results/ellipsoids')
+    parser.add_argument('--output_dir', type=str, default='results/cam_ellipsoids')
     parser.add_argument('--use_ckpt', type=str)
     parser.add_argument('--split', type=str, default='test_train')
     parser.add_argument('--view_in_3d', action='store_true', default=False)
@@ -104,7 +104,7 @@ if __name__ == '__main__':
     elif config.dataset_name == 'kitti360':
         dataset = Kitti360Dataset(root_dir=config.environment_dir, split=args.split,
                                   img_downscale=config.img_downscale,
-                                  near=config.near, far=config.far)
+                                  near=config.near, far=config.far, scene_bound=config.scene_bound)
     # Construct and load model
     embedding_xyz = PosEmbedding(config.N_emb_xyz - 1, config.N_emb_xyz)
     embedding_dir = PosEmbedding(config.N_emb_dir - 1, config.N_emb_dir)
@@ -188,117 +188,127 @@ if __name__ == '__main__':
         line_set.colors = o3d.utility.Vector3dVector(rays_colors)
         geo.append(line_set)
 
-    # Render nerflet ellipsoids
-    sample = dataset[0]
-    rays = sample['rays']
-    if 'ts2' in sample:
-        ts = sample['ts2']
-    else:
-        ts = sample['ts']
-    obj_mask = sample['obj_mask']
-    # TODO: we didn't use obj_mask here
-    # xyz, rays_d, z_vals = get_input_from_rays(rays, config.N_samples, config.use_disp, perturb=0)
-    # with torch.no_grad():
-    #     pred = get_nerflet_pred(nerflet, embeddings, xyz[:1000].cuda(), rays_d[:1000].cuda(), ts[:1000].cuda())
-    ellipsoid_pred = estimate_ellipsoid(nerflet, embeddings, rays, ts, config.N_samples, config.use_disp, config.chunk)
-    rotations = quaternions_to_rotation_matrices(ellipsoid_pred['part_rotations'])
-    rotations = torch.linalg.inv(rotations)
-    translations = ellipsoid_pred['part_translations']
-    scales = ellipsoid_pred['part_scales']
-    for i in range(len(rotations)):
-        rot = rotations[i]
-        trans = translations[i]
-        scale = scales[i]
-        ell_end_points = torch.tensor([[-scale[0], 0, 0], [scale[0], 0, 0],
-                                       [0, -scale[1], 0], [0, scale[1], 0],
-                                       [0, 0, -scale[2]], [0, 0, scale[2]]
-                                       ])
-        ell_end_points = (rot @ ell_end_points.T).T
-        ell_end_points += trans
-        ell_end_points = ell_end_points.numpy()
-
-        ell_color = part_colors[i]
-        ell_center = o3d.geometry.TriangleMesh.create_sphere(radius=0.05)
-        ell_center.paint_uniform_color(ell_color)
-        ell_center.translate(trans.numpy())
-        geo.append(ell_center)
-
-        ell_lines = [[0, 1], [2, 3], [4, 5]]
-        ell_lines_color = [ell_color for _ in range(len(ell_lines))]
-        line_set = o3d.geometry.LineSet()
-        line_set.points = o3d.utility.Vector3dVector(ell_end_points)
-        line_set.lines = o3d.utility.Vector2iVector(ell_lines)
-        line_set.colors = o3d.utility.Vector3dVector(ell_lines_color)
-        geo.append(line_set)
-
-    # # Uniformly sample points in the 3D space and make inference
-    # N_samples = config.N_samples
-    # space_size = 9
-    # multiplier = 4
-    # xs = torch.linspace(-space_size, space_size, steps=N_samples * multiplier)
-    # ys = torch.linspace(-space_size, space_size, steps=N_samples * multiplier)
-    # zs = torch.linspace(-space_size, space_size, steps=N_samples * multiplier)
-    # xyz = torch.cartesian_prod(xs, ys, zs)
-    # xyz = xyz.reshape(-1, N_samples, 3).cuda()
-    # results = inference_pts_occ(nerflet, embeddings, xyz, config.chunk)
-    # if config.predict_density:
-    #     static_density = results
-    #     # TODO: this delta shouldn't be using cam's z_vals because we are in the local nerf coordinate?
-    #     deltas = z_vals[:, 1:] - z_vals[:, :-1]  # (N_rays, N_samples_-1)
-    #     delta_inf = 1e2 * torch.ones_like(deltas[:, :1])  # (N_rays, 1) the last delta is infinity
-    #     deltas = torch.cat([deltas, delta_inf], -1)  # (N_rays, N_samples_)
-    #     deltas = deltas.unsqueeze(-1).expand(-1, -1, nerflet.M)
-    #     noise = torch.randn_like(static_density, device=deltas.device)
-    #     results = 1 - torch.exp(-deltas * torch.relu(static_density + noise))
+    # # Render nerflet ellipsoids
+    # sample = dataset[0]
+    # rays = sample['rays']
+    # if 'ts2' in sample:
+    #     ts = sample['ts2']
+    # else:
+    #     ts = sample['ts']
+    # obj_mask = sample['obj_mask']
+    # # TODO: we didn't use obj_mask here
+    # # xyz, rays_d, z_vals = get_input_from_rays(rays, config.N_samples, config.use_disp, perturb=0)
+    # # with torch.no_grad():
+    # #     pred = get_nerflet_pred(nerflet, embeddings, xyz[:1000].cuda(), rays_d[:1000].cuda(), ts[:1000].cuda())
+    # ellipsoid_pred = estimate_ellipsoid(nerflet, embeddings, rays, ts, config.N_samples, config.use_disp, config.chunk)
+    # rotations = quaternions_to_rotation_matrices(ellipsoid_pred['part_rotations'])
+    # rotations = torch.linalg.inv(rotations)
+    # translations = ellipsoid_pred['part_translations']
+    # scales = ellipsoid_pred['part_scales']
+    # for i in range(len(rotations)):
+    #     rot = rotations[i]
+    #     trans = translations[i]
+    #     scale = scales[i]
+    #     ell_end_points = torch.tensor([[-scale[0], 0, 0], [scale[0], 0, 0],
+    #                                    [0, -scale[1], 0], [0, scale[1], 0],
+    #                                    [0, 0, -scale[2]], [0, 0, scale[2]]
+    #                                    ])
+    #     ell_end_points = (rot @ ell_end_points.T).T
+    #     ell_end_points += trans
+    #     ell_end_points = ell_end_points.numpy()
     #
-    # xyz = xyz.reshape(-1, 3).cpu()
-    # results = results.reshape(-1, config.num_parts)
+    #     ell_color = part_colors[i]
+    #     ell_center = o3d.geometry.TriangleMesh.create_sphere(radius=0.05)
+    #     ell_center.paint_uniform_color(ell_color)
+    #     ell_center.translate(trans.numpy())
+    #     geo.append(ell_center)
     #
-    # occ_threshold = 0.5
-    # pt_max_occ, pt_association = results.max(dim=-1)
-    # pt_occupied_mask = pt_max_occ > occ_threshold
-    # pt_to_show = xyz[pt_occupied_mask]
-    # pt_to_show_association = pt_association[pt_occupied_mask]
-    # for idx in range(config.num_parts):
-    #     pt_part_mask = pt_to_show_association == idx
-    #     pt_part = pt_to_show[pt_part_mask]
-    #     if len(pt_part) == 0:
-    #         continue
-    #     part_color = part_colors[idx]
-    #
-    #     pcd = o3d.geometry.PointCloud()
-    #     pcd.points = o3d.utility.Vector3dVector(pt_part)
-    #     colors = np.tile(part_color, (len(pt_part), 1))
-    #     pcd.colors = o3d.utility.Vector3dVector(colors)
-    #     geo.append(pcd)
+    #     ell_lines = [[0, 1], [2, 3], [4, 5]]
+    #     ell_lines_color = [ell_color for _ in range(len(ell_lines))]
+    #     line_set = o3d.geometry.LineSet()
+    #     line_set.points = o3d.utility.Vector3dVector(ell_end_points)
+    #     line_set.lines = o3d.utility.Vector2iVector(ell_lines)
+    #     line_set.colors = o3d.utility.Vector3dVector(ell_lines_color)
+    #     geo.append(line_set)
+
+    # Uniformly sample points in the 3D space and make inference
+    N_samples = config.N_samples
+    space_size = 9
+    multiplier = 4
+    xs = torch.linspace(-space_size, space_size, steps=N_samples * multiplier)
+    ys = torch.linspace(-space_size, space_size, steps=N_samples * multiplier)
+    zs = torch.linspace(-space_size, space_size, steps=N_samples * multiplier)
+    xyz = torch.cartesian_prod(xs, ys, zs)
+    xyz = xyz.reshape(-1, N_samples, 3).cuda()
+    results = inference_pts_occ(nerflet, embeddings, xyz, config.chunk)
+    if config.predict_density:
+        static_density = results
+        # TODO: this delta shouldn't be using cam's z_vals because we are in the local nerf coordinate?
+        deltas = z_vals[:, 1:] - z_vals[:, :-1]  # (N_rays, N_samples_-1)
+        delta_inf = 1e2 * torch.ones_like(deltas[:, :1])  # (N_rays, 1) the last delta is infinity
+        deltas = torch.cat([deltas, delta_inf], -1)  # (N_rays, N_samples_)
+        deltas = deltas.unsqueeze(-1).expand(-1, -1, nerflet.M)
+        noise = torch.randn_like(static_density, device=deltas.device)
+        results = 1 - torch.exp(-deltas * torch.relu(static_density + noise))
+
+    xyz = xyz.reshape(-1, 3).cpu()
+    results = results.reshape(-1, config.num_parts)
+
+    occ_threshold = 0.5
+    pt_max_occ, pt_association = results.max(dim=-1)
+    pt_occupied_mask = pt_max_occ > occ_threshold
+    pt_to_show = xyz[pt_occupied_mask]
+    pt_to_show_association = pt_association[pt_occupied_mask]
+    for idx in range(config.num_parts):
+        pt_part_mask = pt_to_show_association == idx
+        pt_part = pt_to_show[pt_part_mask]
+        if len(pt_part) == 0:
+            continue
+        part_color = part_colors[idx]
+
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(pt_part)
+        colors = np.tile(part_color, (len(pt_part), 1))
+        pcd.colors = o3d.utility.Vector3dVector(colors)
+        geo.append(pcd)
 
     if args.view_in_3d:
         o3d.visualization.draw_geometries(geo)
     else:
-        sample_view = dataset[0]
-        c2w = sample_view['c2w']
+        # sample_view = dataset[0]
+        # c2w = sample_view['c2w']
+
+        def rotate_view(vis):
+            ctr = vis.get_view_control()
+            ctr.rotate(10.0, 0.0)
+            return False
 
         vis = o3d.visualization.Visualizer()
-        vis.create_window(width=w, height=h, visible=True)
+        # vis.create_window(width=w * config.img_downscale, height=h * config.img_downscale, visible=True)
+        vis.create_window()
         for geo_ in geo:
             vis.add_geometry(geo_)
-        vis.poll_events()
-        ctr = vis.get_view_control()
-        cam_params = ctr.convert_to_pinhole_camera_parameters()
-        cam_params.extrinsic = np.concatenate((c2w.numpy(), np.array([[0, 0, 0, 1]])), axis=0)
-        K_ = dataset.K
-        K_[0, 2] -= 0.5
-        K_[1, 2] -= 0.5
-        cam_params.intrinsic = o3d.camera.PinholeCameraIntrinsic(w, h, dataset.K)
-        ctr.convert_from_pinhole_camera_parameters(cam_params)
-        vis.update_renderer()
-        image = vis.capture_screen_float_buffer(do_render=True)
-        image = (np.asarray(image) * 255).astype(np.uint8)
+
+        for i in range(36):
+            # ctr = vis.get_view_control()
+            # cam_params = ctr.convert_to_pinhole_camera_parameters()
+            # cam_params.extrinsic = np.concatenate((c2w.numpy(), np.array([[0, 0, 0, 1]])), axis=0)
+            # K_ = dataset.K
+            # K_[0, 2] -= 0.5
+            # K_[1, 2] -= 0.5
+            # cam_params.intrinsic = o3d.camera.PinholeCameraIntrinsic(w, h, dataset.K)
+            # ctr.convert_from_pinhole_camera_parameters(cam_params)
+
+            # ctr.camera_local_rotate(10 * i, 0)
+            # vis.poll_events()
+            # vis.update_renderer()
+
+            image = vis.capture_screen_float_buffer(do_render=False)
+            image = (np.asarray(image) * 255).astype(np.uint8)
+
+            out_img_path = output_dir / f"{i}.png"
+            plt.imsave(out_img_path, image)
+            writer.append_data(image)
         vis.destroy_window()
-
-        out_img_path = output_dir / f"{ckpt_name}.png"
-        plt.imsave(out_img_path, image)
-        writer.append_data(image)
-
     writer.close()
 
