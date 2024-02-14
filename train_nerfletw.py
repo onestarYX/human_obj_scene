@@ -142,6 +142,8 @@ class NerfletWSystem(LightningModule):
                                         near=self.hparams.near, **kwargs)
             self.scene_bbox = self.train_dataset.bbox
         elif self.hparams.dataset_name == 'kitti360':
+            # TODO: need to configure scene_bbox
+            self.scene_bbox = [[-1, -1, -1], [1, 1, 1]]
             self.train_dataset = Kitti360Dataset(root_dir=self.hparams.environment_dir, split='train',
                                                  img_downscale=self.hparams.img_downscale,
                                                  near=self.hparams.near, far=self.hparams.far,
