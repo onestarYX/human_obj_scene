@@ -28,6 +28,7 @@ from utils import (
     get_scheduler,
     get_learning_rate
 )
+from utils.vis_pcd_uniform import get_wandb_point_scene
 
 # losses
 from losses import loss_dict
@@ -321,6 +322,8 @@ class NerfletWSystem(LightningModule):
                            self.hparams.use_bg_nerf, obj_mask,
                            self.hparams.loss_pos_ray_ratio)
         loss = sum(l for l in loss_d.values())
+
+        # Log metrics
         self.log('val/loss', loss, prog_bar=True)
         dict_to_log = {'val/loss': loss}
         for k, v in loss_d.items():
@@ -342,9 +345,19 @@ class NerfletWSystem(LightningModule):
         self.log('val/psnr', psnr_, prog_bar=True)
         wandb.log(dict_to_log)
 
-        print("Rendering some sample images from the training set...")
-        render_img_name = f"s={self.global_step:06d}_i={batch_nb:03d}"
-        render_path = os.path.join(self.hparams.render_dir, f"{render_img_name}.png")
+        # Visualize nerflets
+        if batch_nb == 0:
+            point_scene = get_wandb_point_scene(config=self.hparams, dataset=self.test_dataset,
+                                                nerflet=self.nerflet, embeddings=self.embeddings)
+            wandb.log({"3D/point_scene": point_scene})
+
+        # Render sample images from training set
+        sample_img_idx = self.test_dataset.img_paths[batch_nb].stem
+        render_img_name = f"s={self.global_step:06d}_i={batch_nb:03d}_{sample_img_idx}"
+        print(f"Rendering sample image {render_img_name} from the training set...")
+        render_dir = os.path.join(self.hparams.render_dir, 'train')
+        os.makedirs(render_dir, exist_ok=True)
+        render_path = os.path.join(render_dir, f"{render_img_name}.png")
         np.random.seed(19)
         label_colors = np.random.rand(self.hparams.num_classes, 3)
         part_colors = np.random.rand(self.hparams.num_parts, 3)
@@ -353,10 +366,21 @@ class NerfletWSystem(LightningModule):
                                     config=self.hparams, label_colors=label_colors, part_colors=part_colors,
                                     write_to_path=False)
         wd_img = wandb.Image(res_img, caption=f"{render_img_name}")
-        wandb.log({f"Renderings_id={batch_nb}": wd_img})
+        wandb.log({f"train_rendering/Renderings_id={batch_nb}": wd_img})
 
-        # if batch_nb == 0:
-
+        # Render sample images from validation set
+        sample_img_idx = self.val_dataset.img_paths[batch_nb].stem
+        render_img_name = f"s={self.global_step:06d}_i={batch_nb:03d}_{sample_img_idx}"
+        print(f"Rendering sample image {render_img_name} from the validation set...")
+        render_dir = os.path.join(self.hparams.render_dir, 'val')
+        os.makedirs(render_dir, exist_ok=True)
+        render_path = os.path.join(render_dir, f"{render_img_name}.png")
+        _, res_img = render_to_path(path=render_path, dataset=self.val_dataset,
+                                    idx=batch_nb, models=self.models, embeddings=self.embeddings,
+                                    config=self.hparams, label_colors=label_colors, part_colors=part_colors,
+                                    write_to_path=False)
+        wd_img = wandb.Image(res_img, caption=f"{render_img_name}")
+        wandb.log({f"val_rendering/Renderings_id={batch_nb}": wd_img})
 
         return dict_to_log
 

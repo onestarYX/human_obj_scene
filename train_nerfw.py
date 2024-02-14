@@ -448,15 +448,16 @@ class NeRFSystem(LightningModule):
         loss_d = self.loss(results, rgbs, labels, ray_mask)
         loss = sum(l for l in loss_d.values())
 
+        # Render metrics
         dict_to_log = {'val/loss': loss}
         self.log('val/loss', loss, prog_bar=True)
         typ = 'fine' if 'rgb_fine' in results else 'coarse'
-
         psnr_ = psnr(results[f'rgb_{typ}'], rgbs)
         dict_to_log['val/psnr'] = psnr_
         self.log('val/psnr', psnr_, prog_bar=True)
         wandb.log(dict_to_log)
 
+        # Render sample images from training set
         sample_img_idx = self.test_dataset.img_paths[batch_nb].stem
         render_img_name = f"s={self.global_step:06d}_i={batch_nb:03d}_{sample_img_idx}"
         print(f"Rendering sample image {render_img_name} from the training set...")
@@ -471,6 +472,7 @@ class NeRFSystem(LightningModule):
         wd_img = wandb.Image(res_img, caption=f"{render_img_name}")
         wandb.log({f"train_rendering/Renderings_id={batch_nb}": wd_img})
 
+        # Render sample images from validation set
         sample_img_idx = self.val_dataset.img_paths[batch_nb].stem
         render_img_name = f"s={self.global_step:06d}_i={batch_nb:03d}_{sample_img_idx}"
         print(f"Rendering sample image {render_img_name} from the validation set...")
