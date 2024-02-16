@@ -108,7 +108,7 @@ class NerfletWLoss(nn.Module):
         ret = {}
         if self.label_only:
             label_pred = pred['static_label']
-            inside_rays_mask = pred['static_positive_rays']
+            inside_rays_mask = pred['static_positive_rays_fine']
             if inside_rays_mask.sum() == 0:
                 ret['label_cce'] = torch.nn.functional.cross_entropy(label_pred, gt_labels.to(torch.long))
             else:
