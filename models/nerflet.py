@@ -177,7 +177,8 @@ class Nerflet(nn.Module):
         self.z_texture = nn.Embedding(num_embeddings=self.M, embedding_dim=self.dim_latent)
 
         # Label logits
-        self.part_label_logits = nn.Embedding(num_embeddings=self.M, embedding_dim=self.num_classes)
+        # self.part_label_logits = nn.Embedding(num_embeddings=self.M, embedding_dim=self.num_classes)
+        self.part_label_logits = nn.Parameter(torch.zeros(self.M, self.num_classes))
 
         # Structure networks (predicting pose of each nerflet)
         self.translation_predictor = TranslationPredictor(in_channels=dim_latent,
