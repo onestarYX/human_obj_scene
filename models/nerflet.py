@@ -19,16 +19,17 @@ class TranslationPredictor(nn.Module):
             spread_out_bias = torch.rand(3,) - 0.5
             self.fc[0].bias = nn.Parameter(spread_out_bias)
         self.bbox = bbox
+        self.activation = torch.nn.Sigmoid()
 
     def forward(self, x):
         res = self.fc(x)
         if self.bbox is not None:
+            res = self.activation(res)
             min_point = torch.tensor(self.bbox[0], device=x.device, dtype=torch.float32)\
                 .unsqueeze(0).expand(res.shape[0], -1)
             max_point = torch.tensor(self.bbox[1], device=x.device, dtype=torch.float32)\
                 .unsqueeze(0).expand(res.shape[0], -1)
-            res = torch.maximum(res, min_point)
-            res = torch.minimum(res, max_point)
+            res = (max_point - min_point) * res + min_point
         return res
 
 

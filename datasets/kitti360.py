@@ -90,7 +90,7 @@ class Kitti360Dataset(Dataset):
     def rescale_scene(self):
         max_range = np.max(self.xyz_range)
         scale_factor = max_range / self.scene_bound
-        for i in range(self.frame_start, self.frame_end):
+        for i in range(self.frame_start, self.frame_end + 1):
             self.cam_poses[i][:3, 3] /= scale_factor
         self.xyz_range /= scale_factor
         print(f"After rescaling, cam range: {self.xyz_range}")
