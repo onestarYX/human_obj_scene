@@ -48,3 +48,18 @@ def quaternions_to_rotation_matrices(quaternions: torch.Tensor) -> torch.Tensor:
     R[idxs, 2, 2] = 1 - xx - yy
 
     return R
+
+
+def rpy2mat(rpy):
+    cosines = torch.cos(rpy)
+    sines = torch.sin(rpy)
+    cx, cy, cz = cosines.unbind(-1)
+    sx, sy, sz = sines.unbind(-1)
+    # pyformat: disable
+    rotation = torch.stack(
+        [cz * cy, cz * sy * sx - sz * cx, cz * sy * cx + sz * sx,
+         sz * cy, sz * sy * sx + cz * cx, sz * sy * cx - cz * sx,
+         -sy, cy * sx, cy * cx], dim=-1)
+    # pyformat: enable
+    rotation = rotation.view(*rotation.shape[:-1], 3, 3)
+    return rotation

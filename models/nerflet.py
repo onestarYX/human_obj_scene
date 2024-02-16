@@ -1,7 +1,8 @@
 import torch
 from torch import nn
 from .nerf import PosEmbedding
-from .model_utils import quaternions_to_rotation_matrices
+from .model_utils import *
+import math
 
 
 class TranslationPredictor(nn.Module):
@@ -115,6 +116,8 @@ class Nerflet(nn.Module):
         self.predict_label = predict_label
         self.num_classes = num_classes
         self.M = M
+        self.scale_min = scale_min
+        self.scale_max = scale_max
         self.dim_latent = dim_latent
         self.dim_point_feat = W
         self.embedding_xyz = PosEmbedding(N_emb_xyz - 1, N_emb_xyz)
@@ -181,11 +184,14 @@ class Nerflet(nn.Module):
         self.part_label_logits = nn.Parameter(torch.zeros(self.M, self.num_classes))
 
         # Structure networks (predicting pose of each nerflet)
-        self.translation_predictor = TranslationPredictor(in_channels=dim_latent,
-                                                          use_spread_out_bias=use_spread_out_bias,
-                                                          bbox=self.bbox)
-        self.rotation_predictor = RotationPredictor(in_channels=dim_latent)
-        self.scale_predictor = ScalePredictor(in_channels=dim_latent, min_a=scale_min, max_a=scale_max)
+        # self.translation_predictor = TranslationPredictor(in_channels=dim_latent,
+        #                                                   use_spread_out_bias=use_spread_out_bias,
+        #                                                   bbox=self.bbox)
+        self.translation_predictor = nn.Parameter((torch.rand(self.M, 3) - 0.5))
+        # self.rotation_predictor = RotationPredictor(in_channels=dim_latent)
+        self.rotation_predictor = nn.Parameter((torch.rand((self.M, 3)) - 0.5) * 2 * math.pi)
+        # self.scale_predictor = ScalePredictor(in_channels=dim_latent, min_a=scale_min, max_a=scale_max)
+        self.scale_predictor = nn.Parameter(torch.rand(self.M, 3) * self.scale_max)
 
         # Ray associator
         self.ray_associator = RayAssociator()
@@ -212,12 +218,18 @@ class Nerflet(nn.Module):
         prediction = {}
         z_shape_ts = self.z_shape(torch.arange(self.M).to(pts.device))  # (M, dim_latent)
         z_texture_ts = self.z_texture(torch.arange(self.M).to(pts.device))
-        rotations = self.rotation_predictor(z_shape_ts)
-        prediction['part_rotations'] = rotations
-        translations = self.translation_predictor(z_shape_ts)
-        prediction['part_translations'] = translations
-        scales = self.scale_predictor(z_shape_ts)
-        prediction['part_scales'] = scales
+
+        # rotations = self.rotation_predictor(z_shape_ts)
+        rotations = self.rotation_predictor
+        prediction['part_rotations'] = rotations.data
+
+        # translations = self.translation_predictor(z_shape_ts)
+        translations = self.translation_predictor
+        prediction['part_translations'] = translations.data
+
+        # scales = self.scale_predictor(z_shape_ts)
+        scales = self.scale_predictor
+        prediction['part_scales'] = scales.data
 
         # Perform transformation
         num_rays, num_pts_per_ray, _ = pts.shape
@@ -382,8 +394,9 @@ class Nerflet(nn.Module):
 
 
     def transform_points(self, points, translations, rotations):
-        R = quaternions_to_rotation_matrices(rotations)
-        R = R.unsqueeze(0)  # (1, M, 3, 3)
+        # R = quaternions_to_rotation_matrices(rotations)
+        # R = R.unsqueeze(0)  # (1, M, 3, 3)
+        R = rpy2mat(rotations).unsqueeze(0)
         points = points.unsqueeze(1)    # (N, 1, 3)
         translations = translations.unsqueeze(0)    # (1, M, 3)
         points_transformed = points - translations  # (N, M, 3)
@@ -395,8 +408,9 @@ class Nerflet(nn.Module):
         return points_transformed.squeeze(-1)
 
     def transform_directions(self, directions, rotations):
-        R = quaternions_to_rotation_matrices(rotations) # (M, 3, 3)
-        R = R.unsqueeze(0)  # (1, M, 3, 3)
+        # R = quaternions_to_rotation_matrices(rotations) # (M, 3, 3)
+        # R = R.unsqueeze(0)  # (1, M, 3, 3)
+        R = rpy2mat(rotations).unsqueeze(0)
         directions = directions.unsqueeze(1).transpose(2, 3)    # (N, 1, 3, 1)
         directions_transformed = R.matmul(directions)   # (N, M, 3, 1)
         directions_transformed = torch.nn.functional.normalize(directions_transformed.squeeze(-1), dim=-1)
