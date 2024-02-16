@@ -349,7 +349,7 @@ class Nerflet(nn.Module):
 
         '''Get static semantics'''
         if self.predict_label:
-            static_label_logits = self.part_label_logits(ray_associations)
+            static_label_logits = self.part_label_logits[ray_associations]
             if static_label_logits.dim() == 1:
                 static_label_logits = static_label_logits.unsqueeze(0)
             static_label_logits[~positive_rays] = 0     # will use positive ray mask to mask out these logits when calculating loss or rendering
