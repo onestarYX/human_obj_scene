@@ -92,7 +92,8 @@ def visualize_nerflets(config, dataset, nerflet, embeddings, output_dir):
 
     # Render cameras
     geo = []
-    for cam in cams:
+    cams = [cams[0], cams[len(cams)//2], cams[-1]]
+    for i, cam in enumerate(cams):
         rays_o = cam['rays_o']
         cam_center = o3d.geometry.TriangleMesh.create_sphere(radius=0.1)
         cam_center.paint_uniform_color([0.7, 0.1, 0.1])
@@ -106,7 +107,8 @@ def visualize_nerflets(config, dataset, nerflet, embeddings, output_dir):
                           rays_o + rays_d[2],
                           rays_o + rays_d[3]]
         rays_connections = [[0, 1], [0, 2], [0, 3], [0, 4]]
-        rays_colors = [[0, 0, 1] for _ in range(len(rays_connections))]
+        c = [[1, 0, 1], [0, 1, 0], [0, 0, 1]][i]
+        rays_colors = [c for _ in range(len(rays_connections))]
         line_set = o3d.geometry.LineSet()
         line_set.points = o3d.utility.Vector3dVector(ray_end_points)
         line_set.lines = o3d.utility.Vector2iVector(rays_connections)
@@ -195,7 +197,7 @@ def visualize_nerflets(config, dataset, nerflet, embeddings, output_dir):
         pcd.points = o3d.utility.Vector3dVector(pt_part)
         colors = np.tile(part_color, (len(pt_part), 1))
         pcd.colors = o3d.utility.Vector3dVector(colors)
-        geo.append(pcd)
+        # geo.append(pcd)
 
     if args.view_in_3d:
         o3d.visualization.draw_geometries(geo)
@@ -360,7 +362,8 @@ if __name__ == '__main__':
     elif config.dataset_name == 'kitti360':
         dataset = Kitti360Dataset(root_dir=config.environment_dir, split=args.split,
                                   img_downscale=config.img_downscale,
-                                  near=config.near, far=config.far, scene_bound=config.scene_bound)
+                                  near=config.near, far=config.far, scene_bound=config.scene_bound,
+                                  sort=True)
     # Construct and load model
     embedding_xyz = PosEmbedding(config.N_emb_xyz - 1, config.N_emb_xyz)
     embedding_dir = PosEmbedding(config.N_emb_dir - 1, config.N_emb_dir)
@@ -391,5 +394,5 @@ if __name__ == '__main__':
     load_ckpt(nerflet, ckpt_path, model_name='nerflet')
     models = {'nerflet': nerflet}
 
-    # visualize_nerflets(config, dataset, nerflet, embeddings, output_dir)
-    get_wandb_point_scene(config, dataset, nerflet, embeddings)
+    visualize_nerflets(config, dataset, nerflet, embeddings, output_dir)
+    # get_wandb_point_scene(config, dataset, nerflet, embeddings)

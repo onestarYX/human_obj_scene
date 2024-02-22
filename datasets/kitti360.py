@@ -12,7 +12,7 @@ from .kitti_labels import labels as labels_dict
 import random
 
 class Kitti360Dataset(Dataset):
-    def __init__(self, root_dir, split='train', img_downscale=1, near=0.5, far=12, scene_bound=1):
+    def __init__(self, root_dir, split='train', img_downscale=1, near=0.5, far=12, scene_bound=1, sort=False):
         self.root_dir = Path(root_dir)
         frame_start = int(self.root_dir.stem.split('_')[-2])
         frame_end = int(self.root_dir.stem.split('_')[-1])
@@ -26,6 +26,7 @@ class Kitti360Dataset(Dataset):
         self.near = near
         self.far = far
         self.scene_bound = scene_bound
+        self.sort = sort
         self.define_transform()
         self.read_meta()
         self.white_back = True
@@ -112,16 +113,14 @@ class Kitti360Dataset(Dataset):
         random.seed(19)
         random.shuffle(self.img_paths)
         num_train_imgs = int(len(self.img_paths) * 0.8)
-        if self.split == 'train':
+        if self.split in ['train', 'test_train']:
             self.img_paths = self.img_paths[:num_train_imgs]
-        elif self.split == 'test_train':
-            self.img_paths = self.img_paths[:num_train_imgs]
-
         elif self.split == 'val':
             self.img_paths = self.img_paths[num_train_imgs:]
         else:
             raise NotImplementedError
-        # self.img_paths.sort(key=lambda x: x.name)
+        if self.sort:
+            self.img_paths.sort(key=lambda x: x.name)
 
         self.labels_dir = self.root_dir / 'semantic'
         self.labels_remapping = {}
@@ -147,7 +146,7 @@ class Kitti360Dataset(Dataset):
         
         # ray directions for all pixels, same for all images (same H, W, focal)
         self.directions = \
-            get_ray_directions(h, w, self.K) # (h, w, 3)
+            get_ray_directions(h, w, self.K, convention='opencv') # (h, w, 3)
             
         if self.split == 'train': # create buffer of all rays and rgb data
             self.all_rays = []

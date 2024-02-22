@@ -37,7 +37,7 @@ def get_ray_directions_replica(H, W, K, convention='opencv'):
 
     return dirs
 
-def get_ray_directions(H, W, K):
+def get_ray_directions(H, W, K, convention='opengl'):
     """
     Get ray directions for all pixels in camera coordinate.
     Reference: https://www.scratchapixel.com/lessons/3d-basic-rendering/
@@ -55,14 +55,14 @@ def get_ray_directions(H, W, K):
     # the direction here is without +0.5 pixel centering as calibration is not so accurate
     # see https://github.com/bmild/nerf/issues/24
     fx, fy, cx, cy = K[0, 0], K[1, 1], K[0, 2], K[1, 2]
-    ones = -torch.ones_like(i)
     if torch.is_tensor(K):
         i = i.to(K.device)
         j = j.to(K.device)
-        ones = ones.to(K.device)
-    directions = \
-        torch.stack([(i - cx) / fx, -(j - cy) / fy, ones], -1)  # (H, W, 3)
 
+    if convention == 'opengl':
+        directions = torch.stack([(i - cx) / fx, -(j - cy) / fy, -torch.ones_like(i)], -1)  # (H, W, 3)
+    elif convention == 'opencv':
+        directions = torch.stack([(i - cx) / fx, (j - cy) / fy, torch.ones_like(i)], -1)  # (H, W, 3)
     return directions
 
 
