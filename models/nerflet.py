@@ -191,7 +191,7 @@ class Nerflet(nn.Module):
         # self.rotation_predictor = RotationPredictor(in_channels=dim_latent)
         self.rotation_predictor = nn.Parameter((torch.rand((self.M, 3)) - 0.5) * 2 * math.pi)
         # self.scale_predictor = ScalePredictor(in_channels=dim_latent, min_a=scale_min, max_a=scale_max)
-        self.scale_predictor = nn.Parameter(torch.rand(self.M, 3) * self.scale_max)
+        self.scale_predictor = nn.Parameter((torch.rand(self.M, 3) - 0.5) * 2)
 
         # Ray associator
         self.ray_associator = RayAssociator()
@@ -228,7 +228,7 @@ class Nerflet(nn.Module):
         prediction['part_translations'] = translations.data
 
         # scales = self.scale_predictor(z_shape_ts)
-        scales = self.scale_predictor
+        scales = torch.nn.functional.sigmoid(self.scale_predictor) * self.scale_max
         prediction['part_scales'] = scales.data
 
         # Perform transformation
