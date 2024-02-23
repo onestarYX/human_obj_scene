@@ -187,7 +187,7 @@ class Nerflet(nn.Module):
         # self.translation_predictor = TranslationPredictor(in_channels=dim_latent,
         #                                                   use_spread_out_bias=use_spread_out_bias,
         #                                                   bbox=self.bbox)
-        self.translation_predictor = nn.Parameter((torch.rand(self.M, 3) - 0.5))
+        self.translation_predictor = nn.Parameter((torch.rand(self.M, 3) - 0.5) * 0.2)
         # self.rotation_predictor = RotationPredictor(in_channels=dim_latent)
         self.rotation_predictor = nn.Parameter((torch.rand((self.M, 3)) - 0.5) * 2 * math.pi)
         # self.scale_predictor = ScalePredictor(in_channels=dim_latent, min_a=scale_min, max_a=scale_max)
