@@ -440,7 +440,7 @@ class SitcomSAMDataset(RenderDataset):
                 assert len(cam.params) == 3
                 img_w, img_h = int(cam.params[1] * 2), int(cam.params[2] * 2)
                 img_w_, img_h_ = img_w // self.img_downscale, img_h // self.img_downscale
-                self.img_hw = (img_h_, img_w_)
+                self.img_wh = (img_w_, img_h_)
                 K[0, 0] = cam.params[0] * img_w_ / img_w  # fx
                 K[1, 1] = cam.params[0] * img_h_ / img_h  # fy
                 K[0, 2] = cam.params[1] * img_w_ / img_w  # cx
@@ -511,28 +511,28 @@ class SitcomSAMDataset(RenderDataset):
             self.bbox /= self.scale_factor
         self.poses_dict = {id_: self.poses[i] for i, id_ in enumerate(self.img_ids)}
 
-        # Get SAM masks
-        sam_out_dir = Path(self.environment_dir) / 'sam_masks'
-        sam_out_dir.mkdir(exist_ok=True)
-        sam_out_path = "train.pkl" if self.split in {'train', 'test_train'} else 'val.pkl'
-        sam_out_path = sam_out_dir / sam_out_path
-        self.sam_dict = {}
-        if sam_out_path.exists():
-            with open(sam_out_path, 'rb') as handle:
-                self.sam_dict.update(pickle.load(handle))
-        else:
-            print("Generating SAM masks......")
-            if self.sam_model is None:
-                self.sam_model = pipeline("mask-generation", model="facebook/sam-vit-huge", device=torch.device('cuda'))
-            for id_ in tqdm(self.img_ids):
-                img = self.get_img(id_)
-                img = Image.fromarray(img)
-                masks = self.sam_model(img, points_per_side=32, pred_iou_thresh=0.90, stability_score_thresh=0.90)
-                masks = masks['masks']
-                masks = sorted(masks, key=lambda x: x.sum())
-                self.sam_dict[id_] = masks
-            with open(sam_out_path, 'wb') as handle:
-                pickle.dump(self.sam_dict, handle)
+        # # Get SAM masks
+        # sam_out_dir = Path(self.environment_dir) / 'sam_masks'
+        # sam_out_dir.mkdir(exist_ok=True)
+        # sam_out_path = "train.pkl" if self.split in {'train', 'test_train'} else 'val.pkl'
+        # sam_out_path = sam_out_dir / sam_out_path
+        # self.sam_dict = {}
+        # if sam_out_path.exists():
+        #     with open(sam_out_path, 'rb') as handle:
+        #         self.sam_dict.update(pickle.load(handle))
+        # else:
+        #     print("Generating SAM masks......")
+        #     if self.sam_model is None:
+        #         self.sam_model = pipeline("mask-generation", model="facebook/sam-vit-huge", device=torch.device('cuda'))
+        #     for id_ in tqdm(self.img_ids):
+        #         img = self.get_img(id_)
+        #         img = Image.fromarray(img)
+        #         masks = self.sam_model(img, points_per_side=32, pred_iou_thresh=0.90, stability_score_thresh=0.90)
+        #         masks = masks['masks']
+        #         masks = sorted(masks, key=lambda x: x.sum())
+        #         self.sam_dict[id_] = masks
+        #     with open(sam_out_path, 'wb') as handle:
+        #         pickle.dump(self.sam_dict, handle)
 
 
         self.all_img_ids = []
@@ -634,8 +634,6 @@ class SitcomSAMDataset(RenderDataset):
             sample['rgbs'] = self.all_rgbs[idx].reshape(-1, 3)
             sample['labels'] = self.all_labels[idx].reshape(-1, 1)
             sample['ray_mask'] = self.all_valid_ray_masks[idx].reshape(-1, 1)
-            sample['img_wh'] = torch.LongTensor(self.img_hw)
-        else:
-            raise NotImplementedError(f"Split {self.split} of dataset is not implemented")
+            sample['img_wh'] = torch.LongTensor(self.img_wh)
 
         return sample
