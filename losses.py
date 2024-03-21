@@ -43,14 +43,13 @@ class NerfWLoss(nn.Module):
         # print(inputs["transient_accumulation"].shape)
 
         ret = {}
-        ret['c_l'] = 0.5 * (((inputs['rgb_coarse'] - gt_rgbs) ** 2) * ray_mask[:, None]).sum() / ray_mask_sum
+        ret['c_l'] = 0.5 * (((inputs['rgb_coarse'] - gt_rgbs) ** 2) * ray_mask).sum() / ray_mask_sum
         if 'rgb_fine' in inputs:
             if 'beta' not in inputs:  # no transient head, normal MSE loss
-                ret['f_l'] = 0.5 * (((inputs['rgb_fine'] - gt_rgbs) ** 2) * ray_mask[:, None]).sum() / ray_mask_sum
+                ret['f_l'] = 0.5 * (((inputs['rgb_fine'] - gt_rgbs) ** 2) * ray_mask).sum() / ray_mask_sum
             else:
                 ret['f_l'] = \
-                    (((inputs['rgb_fine'] - gt_rgbs) ** 2 / (2 * inputs['beta'].unsqueeze(1) ** 2)) * ray_mask[:,
-                                                                                                      None]).sum() / ray_mask_sum
+                    (((inputs['rgb_fine'] - gt_rgbs) ** 2 / (2 * inputs['beta'].unsqueeze(1) ** 2)) * ray_mask).sum() / ray_mask_sum
                 ret['b_l'] = 3 + (torch.log(inputs['beta']) * ray_mask).sum() / ray_mask_sum
                 ret['s_l'] = self.lambda_u * inputs['transient_sigmas'].mean()
 

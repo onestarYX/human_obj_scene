@@ -141,3 +141,4 @@ data
 shell_scripts/
 output/
 wandb/
+segment-anything/

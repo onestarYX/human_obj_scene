@@ -259,6 +259,9 @@ def get_parser():
     parser.add_argument('--use_bg_nerf', action='store_true', default=False)
     parser.add_argument('--scene_bound', type=float, default=1)
 
+    parser.add_argument('--num_rays_per_img', type=int, default=256)
+    parser.add_argument('--epochs_begin_grouping', type=int, default=10)
+
     parser.add_argument('--w_color_l', type=float, default=1)
     parser.add_argument('--w_beta_l', type=float, default=1)
     parser.add_argument('--w_transient_reg', type=float, default=1)

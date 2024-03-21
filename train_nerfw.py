@@ -15,7 +15,7 @@ from pytorch_lightning.loggers import TestTubeLogger
 from einops import repeat
 import json
 
-from datasets.sitcom3D import Sitcom3DDataset
+from datasets.sitcom_garfield import SitcomSAMDataset
 from datasets.kitti360 import Kitti360Dataset
 from datasets.ray_utils import get_ray_directions, get_rays, get_rays_batch_version
 
@@ -337,18 +337,16 @@ class NeRFSystem(LightningModule):
 
     def init_datasets(self):
         if self.hparams.dataset_name == 'sitcom3D':
-            dataset = Sitcom3DDataset
+            dataset = SitcomSAMDataset
             kwargs = {'environment_dir': self.hparams.environment_dir,
-                      'near_far_version': self.hparams.near_far_version}
-            # kwargs['img_downscale'] = self.hparams.img_downscale
-            kwargs['val_num'] = self.hparams.num_gpus
-            kwargs['use_cache'] = self.hparams.use_cache
-            kwargs['num_limit'] = self.hparams.num_limit
+                      'near_far_version': self.hparams.near_far_version,
+                      'num_limit': self.hparams.num_limit,
+                      'bs': self.hparams.batch_size}
             # !!!!! There is no manual near and far restriction to the dataset. We didn't overwrite near here !!!!!
             self.train_dataset = dataset(split='train' if not self.eval_only else 'val',
                                          img_downscale=self.hparams.img_downscale, **kwargs)
             self.val_dataset = dataset(split='val', img_downscale=self.hparams.img_downscale_val, **kwargs)
-            self.test_dataset = dataset(split='test_train', img_downscale=self.hparams.img_downscale, **kwargs)
+            self.test_dataset = dataset(split='test_train', img_downscale=self.hparams.img_downscale_val, **kwargs)
         elif self.hparams.dataset_name == 'kitti360':
             self.train_dataset = Kitti360Dataset(root_dir=self.hparams.environment_dir, split='train',
                                                  img_downscale=self.hparams.img_downscale,
@@ -378,7 +376,7 @@ class NeRFSystem(LightningModule):
         return DataLoader(self.train_dataset,
                           shuffle=True,
                           num_workers=4,
-                          batch_size=self.hparams.batch_size,
+                          batch_size=1,
                           pin_memory=True)
 
     def val_dataloader(self):
@@ -391,22 +389,19 @@ class NeRFSystem(LightningModule):
     def is_learning_pose(self):
         return (self.hparams.learn_f or self.hparams.learn_r or self.hparams.learn_t)
 
-    def rays_from_batch(self, batch):
-        if self.is_learning_pose():
-            raise NotImplementedError
-        else:
-            rays = batch['rays'].squeeze()
-            ray_mask = batch['ray_mask'].squeeze()
-        return rays, ray_mask
+    def preprocess_batch(self, batch):
+        for k in batch.keys():
+            if isinstance(batch[k], torch.Tensor):
+                batch[k] = batch[k].squeeze(0)
 
     def training_step(self, batch, batch_nb):
-        rays, ray_mask = self.rays_from_batch(batch)
+        self.preprocess_batch(batch)
+        rays = batch['rays']
+        ray_mask = batch['ray_mask']
         rgbs = batch['rgbs']
-        if 'ts2' in batch:
-            ts = batch['ts2']
-        else:
-            ts = batch['ts']
+        ts = batch['ts']
         labels = batch['labels'].to(torch.long).squeeze()
+
         results = self.forward(rays, ts, version="train")
         loss_d = self.loss(results, rgbs, labels, ray_mask)
         loss = sum(l for l in loss_d.values())
@@ -434,16 +429,13 @@ class NeRFSystem(LightningModule):
         return loss
 
     def validation_step(self, batch, batch_nb):
-        rays, ray_mask = self.rays_from_batch(batch)
+        self.preprocess_batch(batch)
+        rays = batch['rays']
+        ray_mask = batch['ray_mask']
         rgbs = batch['rgbs']
-        if 'ts2' in batch:
-            ts = batch['ts2']
-        else:
-            ts = batch['ts']
+        ts = batch['ts'].squeeze()
         labels = batch['labels'].to(torch.long).squeeze()
-        rays = rays.squeeze()  # (H*W, 3)
-        rgbs = rgbs.squeeze()  # (H*W, 3)
-        ts = ts.squeeze()  # (H*W)
+
         results = self.forward(rays, ts, version="val")
         loss_d = self.loss(results, rgbs, labels, ray_mask)
         loss = sum(l for l in loss_d.values())
