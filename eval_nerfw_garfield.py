@@ -10,10 +10,10 @@ from tqdm import tqdm
 # models
 from models.nerf import (
     PosEmbedding,
-    NeRFW
+    NeRFWG
 )
 from models.nerflet import Nerflet
-from models.rendering import (
+from models.rendering_garfield import (
     render_rays
 )
 
@@ -39,26 +39,25 @@ from omegaconf import OmegaConf
 
 @torch.no_grad()
 def batched_inference(models, embeddings,
-                      rays, ts, predict_label, num_classes, N_samples, N_importance, use_disp,
+                      rays, ts, do_grouping, N_samples, N_importance, use_disp,
                       chunk, white_back, **kwargs):
     """Do batched inference on rays using chunk."""
     B = rays.shape[0]
     results = defaultdict(list)
     for chunk_idx in range(0, B, chunk):
         rendered_ray_chunks = \
-            render_rays(models,
-                        embeddings,
-                        rays[chunk_idx:chunk_idx+chunk],
-                        ts[chunk_idx:chunk_idx+chunk] if ts is not None else None,
-                        predict_label,
-                        num_classes,
-                        N_samples,
-                        use_disp,
+            render_rays(models=models,
+                        embeddings=embeddings,
+                        rays=rays[chunk_idx:chunk_idx+chunk],
+                        ts=ts[chunk_idx:chunk_idx+chunk] if ts is not None else None,
+                        do_grouping=do_grouping,
+                        N_samples=N_samples,
+                        use_disp=use_disp,
                         perturb=0,
                         N_importance=N_importance,
                         chunk=chunk,
                         white_back=white_back,
-                        test_time=False,
+                        test_time=True,
                         **kwargs)
 
         for k, v in rendered_ray_chunks.items():
@@ -83,16 +82,12 @@ def compute_iou(pred, gt, num_cls):
 
 
 def render_to_path(path, dataset, idx, models, embeddings, config,
-                   label_colors):
+                   label_colors, do_grouping):
     sample = dataset[idx]
     rays = sample['rays']
-    if 'ts2' in sample:
-        ts = sample['ts2']
-    else:
-        ts = sample['ts']
+    ts = sample['ts'].squeeze()
     results = batched_inference(models=models, embeddings=embeddings, rays=rays.cuda(), ts=ts.cuda(),
-                                predict_label=config.predict_label, num_classes=config.num_classes,
-                                N_samples=config.N_samples, N_importance=config.N_importance,
+                                do_grouping=do_grouping, N_samples=config.N_samples, N_importance=config.N_importance,
                                 use_disp=config.use_disp, chunk=config.chunk, white_back=dataset.white_back)
 
     rows = []
@@ -107,7 +102,7 @@ def render_to_path(path, dataset, idx, models, embeddings, config,
         w, h = dataset.img_wh
 
     # GT image and predicted combined image
-    img_pred = np.clip(results['rgb_fine'].view(h, w, 3).cpu().numpy(), 0, 1)
+    img_pred = np.clip(results['rgb_fine_combined'].view(h, w, 3).cpu().numpy(), 0, 1)
     img_pred_ = (img_pred * 255).astype(np.uint8)
     rgbs = sample['rgbs']
     img_gt = rgbs.view(h, w, 3)
@@ -122,7 +117,7 @@ def render_to_path(path, dataset, idx, models, embeddings, config,
     if config.encode_t:
         img_static = np.clip(results['rgb_fine_static'].view(h, w, 3).cpu().numpy(), 0, 1)
         img_static_ = (img_static * 255).astype(np.uint8)
-        static_depth = results['depth_fine_static_exp'].cpu().numpy()
+        static_depth = results['depth_fine_static'].cpu().numpy()
     else:
         img_static_ = np.zeros((h, w, 3), dtype=np.ubyte)
         static_depth = results['depth_fine'].cpu().numpy()
@@ -130,31 +125,6 @@ def render_to_path(path, dataset, idx, models, embeddings, config,
     depth_static = depth_static.reshape(h, w, 1)
     depth_static_ = np.repeat(depth_static, 3, axis=2)
     rows.append(np.concatenate([img_static_, depth_static_], axis=1))
-
-    # gt label and pred label
-    if config.predict_label:
-        label_gt = sample['labels'].to(torch.long).cpu().numpy()
-        label_map_gt = label_colors[label_gt].reshape((h, w, 3))
-        label_map_gt = (label_map_gt * 255).astype(np.uint8)
-        label_pred = results['label_fine']
-        label_pred = torch.argmax(label_pred, dim=1).to(torch.long).cpu().numpy()
-        label_map_pred = label_colors[label_pred].reshape((h, w, 3))
-        label_map_pred = (label_map_pred * 255).astype(np.uint8)
-        iou = compute_iou(label_pred, label_gt, config.num_classes)
-        metrics['iou_combined'] = iou
-        print(f"Semantic iou: {iou}")
-        rows.append(np.concatenate([label_map_gt, label_map_pred], axis=1))
-
-        if config.encode_t:
-            label_static_pred = torch.argmax(results['static_label'], dim=1).to(torch.long).cpu().numpy()
-            label_map_static_pred = label_colors[label_static_pred].reshape((h, w, 3))
-            label_map_static_pred = (label_map_static_pred * 255).astype(np.uint8)
-            metrics['iou_static'] = compute_iou(label_static_pred, label_gt, config.num_classes)
-
-            label_transient_pred = torch.argmax(results['transient_label'], dim=1).to(torch.long).cpu().numpy()
-            label_map_transient_pred = label_colors[label_transient_pred].reshape((h, w, 3))
-            label_map_transient_pred = (label_map_transient_pred * 255).astype(np.uint8)
-            rows.append(np.concatenate([label_map_static_pred, label_map_transient_pred], axis=1))
 
     res_img = np.concatenate(rows, axis=0)
     # imageio.imwrite(path, res_img)
@@ -221,17 +191,15 @@ if __name__ == '__main__':
         load_ckpt(embedding_t, args.use_ckpt, model_name='embedding_t')
         embeddings['t'] = embedding_t
 
-    nerf_coarse = NeRFW('coarse',
+    nerf_coarse = NeRFWG('coarse',
                        D=config.num_hidden_layers,
                        W=config.dim_hidden_layers,
                        skips=config.skip_layers,
                        in_channels_xyz=6 * config.N_emb_xyz + 3,
                        in_channels_dir=6 * config.N_emb_dir + 3,
                        encode_appearance=False,
-                       predict_label=config.predict_label,
-                       num_classes=config.num_classes,
                        use_view_dirs=config.use_view_dirs).cuda()
-    nerf_fine = NeRFW('fine',
+    nerf_fine = NeRFWG('fine',
                      D=config.num_hidden_layers,
                      W=config.dim_hidden_layers,
                      skips=config.skip_layers,
@@ -241,8 +209,6 @@ if __name__ == '__main__':
                      in_channels_a=config.N_a,
                      encode_transient=config.encode_t,
                      in_channels_t=config.N_tau,
-                     predict_label=config.predict_label,
-                     num_classes=config.num_classes,
                      beta_min=config.beta_min,
                      use_view_dirs=config.use_view_dirs).cuda()
     load_ckpt(nerf_coarse, args.use_ckpt, model_name='nerf_coarse')
@@ -269,7 +235,3 @@ if __name__ == '__main__':
 
     mean_psnr = np.mean(psnrs)
     print(f'Mean PSNR : {mean_psnr:.2f}')
-
-    if config.predict_label:
-        print('Mean IoU combined', np.mean(iou_combined))
-        print('Mean IoU static', np.mean(iou_static))

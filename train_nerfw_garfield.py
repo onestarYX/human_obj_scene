@@ -22,10 +22,10 @@ from datasets.ray_utils import get_ray_directions, get_rays, get_rays_batch_vers
 # models
 from models.nerf import (
     PosEmbedding,
-    NeRFW
+    NeRFWG,
+    GarfieldPredictor
 )
-from models.rendering import render_rays
-from models.pose import LearnFocal, LearnPose
+from models.rendering_garfield import render_rays
 
 # optimizer, scheduler, visualization
 from utils import (
@@ -42,7 +42,7 @@ from metrics import psnr
 from utils import load_ckpt
 
 import wandb
-from eval_nerfw import render_to_path
+from eval_nerfw_garfield import render_to_path
 from train_nerfletw import count_parameters
 
 
@@ -60,7 +60,7 @@ class NeRFSystem(LightningModule):
             'cce_coarse': hparams.w_label_cce,
             'cce_fine': hparams.w_label_cce
         }
-        self.loss = loss_dict['nerfw'](coef=loss_weights, predict_label=hparams.predict_label)
+        self.loss = loss_dict['nerfw_garfield'](coef=loss_weights)
 
         self.models_to_train = []
         self.embedding_xyz = PosEmbedding(hparams.N_emb_xyz - 1, hparams.N_emb_xyz)
@@ -77,35 +77,34 @@ class NeRFSystem(LightningModule):
             self.embeddings['t'] = self.embedding_t
             self.models_to_train += [self.embedding_t]
 
-        self.nerf_coarse = NeRFW('coarse',
-                                 D=hparams.num_hidden_layers,
-                                 W=hparams.dim_hidden_layers,
-                                 skips=hparams.skip_layers,
-                                 in_channels_xyz=6 * hparams.N_emb_xyz + 3,
-                                 in_channels_dir=6 * hparams.N_emb_dir + 3,
-                                 encode_appearance=False,
-                                 predict_label=self.hparams.predict_label,
-                                 num_classes=self.hparams.num_classes,
-                                 use_view_dirs=hparams.use_view_dirs)
+        self.nerf_coarse = NeRFWG('coarse',
+                                  D=hparams.num_hidden_layers,
+                                  W=hparams.dim_hidden_layers,
+                                  skips=hparams.skip_layers,
+                                  in_channels_xyz=6 * hparams.N_emb_xyz + 3,
+                                  in_channels_dir=6 * hparams.N_emb_dir + 3,
+                                  encode_appearance=False,
+                                  use_view_dirs=hparams.use_view_dirs)
         self.models = {'coarse': self.nerf_coarse}
         if hparams.N_importance > 0:
             if hparams.fine_coarse_same:
                 self.nerf_fine = self.nerf_coarse
             else:
-                self.nerf_fine = NeRFW('fine',
-                                       D=hparams.num_hidden_layers,
-                                       W=hparams.dim_hidden_layers,
-                                       skips=hparams.skip_layers,
-                                       in_channels_xyz=6 * hparams.N_emb_xyz + 3,
-                                       in_channels_dir=6 * hparams.N_emb_dir + 3,
-                                       encode_appearance=hparams.encode_a,
-                                       in_channels_a=hparams.N_a,
-                                       encode_transient=hparams.encode_t,
-                                       in_channels_t=hparams.N_tau,
-                                       predict_label=self.hparams.predict_label,
-                                       num_classes=self.hparams.num_classes,
-                                       beta_min=hparams.beta_min,
-                                       use_view_dirs=hparams.use_view_dirs)
+                self.nerf_fine = NeRFWG('fine',
+                                        D=hparams.num_hidden_layers,
+                                        W=hparams.dim_hidden_layers,
+                                        skips=hparams.skip_layers,
+                                        in_channels_xyz=6 * hparams.N_emb_xyz + 3,
+                                        in_channels_dir=6 * hparams.N_emb_dir + 3,
+                                        encode_appearance=hparams.encode_a,
+                                        in_channels_a=hparams.N_a,
+                                        encode_transient=hparams.encode_t,
+                                        in_channels_t=hparams.N_tau,
+                                        beta_min=hparams.beta_min,
+                                        use_view_dirs=hparams.use_view_dirs)
+
+            self.garfield_predictor = GarfieldPredictor(D=2, W=hparams.dim_hidden_layers)
+            self.models['garfield_predictor'] = self.garfield_predictor
             self.models['fine'] = self.nerf_fine
         self.models_to_train += [self.models]
         self.models_mm_to_train = []
@@ -149,184 +148,25 @@ class NeRFSystem(LightningModule):
         items.pop("v_num", None)
         return items
 
-    @torch.no_grad()
-    def forward_rays(self,
-                     rays_o,
-                     rays_d,
-                     a=None,
-                     t=None,
-                     id_=None,
-                     N_samples=128,
-                     N_importance=128,
-                     near_min=0.1):
-        """
-        rays_o: (H, W, 3)
-        rays_d: (H, W, 3)
-        a: ()
-        t: ()
-
-        near_min is helpful to avoid any artifacts.
-        however, probably don't need this for test time if during training near_min
-        other than 0 is used
-        """
-
-        if isinstance(a, type(None)):
-            if id_ is None:
-                id_ = self.train_dataset.img_ids[0]
-                a = torch.zeros_like(self.embedding_a(torch.tensor(id_).to(rays_o.device)))
-            else:
-                a = self.embedding_a(torch.tensor(id_).to(rays_o.device))
-        if isinstance(t, type(None)):
-            if id_ is None:
-                id_ = self.train_dataset.img_ids[0]
-                t = torch.zeros_like(self.embedding_t(torch.tensor(id_).to(rays_o.device)))
-            else:
-                t = self.embedding_t(torch.tensor(id_).to(rays_o.device))
-
-        H, W, _ = rays_o.shape
-        assert rays_o.shape == rays_d.shape
-        rays_o_flat = rays_o.view(-1, 3)
-        rays_d_flat = rays_d.view(-1, 3)
-        nears, fars, ray_mask = self.train_dataset.get_nears_fars_from_rays_or_cam(rays_o_flat, rays_d_flat, c2w=None)
-        nears[nears < near_min] = near_min
-
-        rays = torch.cat([rays_o_flat,
-                          rays_d_flat,
-                          nears,
-                          fars],
-                         1)
-
-        B = rays.shape[0]
-        results = defaultdict(list)
-        for i in tqdm(range(0, B, self.hparams.chunk)):
-            kwargs = {}
-            kwargs["a_embedded"] = repeat(a, 'c -> n c', n=len(rays[i:i + self.hparams.chunk]))
-            kwargs["t_embedded"] = repeat(t, 'c -> n c', n=len(rays[i:i + self.hparams.chunk]))
-            rendered_ray_chunks = \
-                render_rays(models=self.models,
-                            embeddings=self.embeddings,
-                            rays=rays[i:i + self.hparams.chunk],
-                            ts=None,  # ts[i:i + self.hparams.chunk],
-                            N_samples=N_samples,
-                            use_disp=False,
-                            perturb=self.hparams.perturb,
-                            noise_std=False,
-                            N_importance=N_importance,
-                            chunk=self.hparams.chunk,  # chunk size is effective in val mode
-                            white_back=True,
-                            test_time=True,
-                            **kwargs)
-
-            for k, v in rendered_ray_chunks.items():
-                results[k] += [v.cpu()]
-
-        for k, v in results.items():
-            results[k] = torch.cat(v, 0)
-        results['img_wh'] = [W, H]
-        return results
-
-    @torch.no_grad()
-    def forward_pose_K_a_t(self, c2w, K,
-                           a=None,
-                           t=None,
-                           id_=None,
-                           #    N_samples=128,
-                           #    N_importance=128,
-                           N_samples=128,
-                           #    N_importance=64,
-                           N_importance=128,
-                           near_min=0.1):
-        """
-        pose: (3, 4)
-        K: (3, 3)
-        a: ()
-        t: ()
-
-        near_min is helpful to avoid any artifacts.
-        however, probably don't need this for test time if during training near_min
-        other than 0 is used
-        """
-
-        if isinstance(a, type(None)):
-            if id_ is None:
-                id_ = self.train_dataset.img_ids[0]
-                a = torch.zeros_like(self.embedding_a(torch.tensor(id_).to(c2w.device)))
-            else:
-                a = self.embedding_a(torch.tensor(id_).to(c2w.device))
-        if isinstance(t, type(None)):
-            if id_ is None:
-                id_ = self.train_dataset.img_ids[0]
-                t = torch.zeros_like(self.embedding_t(torch.tensor(id_).to(c2w.device)))
-            else:
-                t = self.embedding_t(torch.tensor(id_).to(c2w.device))
-
-        assert c2w.shape == (3, 4)
-
-        H, W = round(K[1, 2].item() * 2.0), round(K[0, 2].item() * 2.0)  # using "round" bc of floating precision
-
-        directions = get_ray_directions(H, W, K)
-        rays_o, rays_d = get_rays(directions, c2w)
-        nears, fars, ray_mask = self.train_dataset.get_nears_fars_from_rays_or_cam(rays_o, rays_d, c2w=c2w)
-
-        # print((nears < near_min).float().sum())
-        nears[nears < near_min] = near_min
-
-        # nears += 0.05 # TODO(ethan): decide to keep this or not
-        rays = torch.cat([rays_o, rays_d,
-                          nears,
-                          fars],
-                         1)
-
-        B = rays.shape[0]
-        results = defaultdict(list)
-        for i in tqdm(range(0, B, self.hparams.chunk)):
-            kwargs = {}
-            kwargs["a_embedded"] = repeat(a, 'c -> n c', n=len(rays[i:i + self.hparams.chunk]))
-            kwargs["t_embedded"] = repeat(t, 'c -> n c', n=len(rays[i:i + self.hparams.chunk]))
-            rendered_ray_chunks = \
-                render_rays(models=self.models,
-                            embeddings=self.embeddings,
-                            rays=rays[i:i + self.hparams.chunk],
-                            ts=None,  # ts[i:i + self.hparams.chunk],
-                            N_samples=N_samples,
-                            use_disp=False,
-                            perturb=self.hparams.perturb,
-                            noise_std=False,
-                            N_importance=N_importance,
-                            chunk=self.hparams.chunk,  # chunk size is effective in val mode
-                            white_back=True,
-                            test_time=True,
-                            **kwargs)
-
-            for k, v in rendered_ray_chunks.items():
-                results[k] += [v.cpu()]
-
-        for k, v in results.items():
-            results[k] = torch.cat(v, 0)
-        results['img_wh'] = [W, H]
-        return results
-
-    def forward(self, rays, ts, version=None):
+    def forward(self, rays, ts, do_grouping, test_time):
         """Do batched inference on rays using chunk."""
-        assert version is not None
         B = rays.shape[0]
         results = defaultdict(list)
         for i in range(0, B, self.hparams.chunk):
             rendered_ray_chunks = \
-                render_rays(self.models,
-                            self.embeddings,
-                            rays[i:i + self.hparams.chunk],
-                            ts[i:i + self.hparams.chunk],
-                            self.hparams.predict_label,
-                            self.hparams.num_classes,
-                            self.hparams.N_samples,
-                            self.hparams.use_disp,
-                            self.hparams.perturb if version == "train" else 0,
-                            self.hparams.noise_std,
-                            self.hparams.N_importance,
-                            self.hparams.chunk,  # chunk size is effective in val mode
-                            self.train_dataset.white_back,
-                            validation_version=version == "val")
+                render_rays(models=self.models,
+                            embeddings=self.embeddings,
+                            rays=rays[i:i + self.hparams.chunk],
+                            ts=ts[i:i + self.hparams.chunk],
+                            do_grouping=do_grouping,
+                            N_samples=self.hparams.N_samples,
+                            use_disp=self.hparams.use_disp,
+                            perturb=self.hparams.perturb if not test_time else 0,
+                            noise_std=self.hparams.noise_std,
+                            N_importance=self.hparams.N_importance,
+                            chunk=self.hparams.chunk,  # chunk size is effective in val mode
+                            white_back=self.train_dataset.white_back,
+                            test_time=test_time)
 
             for k, v in rendered_ray_chunks.items():
                 results[k] += [v]
@@ -400,10 +240,12 @@ class NeRFSystem(LightningModule):
         ray_mask = batch['ray_mask']
         rgbs = batch['rgbs']
         ts = batch['ts']
-        labels = batch['labels'].to(torch.long).squeeze()
 
-        results = self.forward(rays, ts, version="train")
-        loss_d = self.loss(results, rgbs, labels, ray_mask)
+        if self.current_epoch >= self.hparams.epochs_begin_grouping:
+            results = self.forward(rays, ts, do_grouping=True, test_time=False)
+        else:
+            results = self.forward(rays, ts, do_grouping=False, test_time=False)
+        loss_d = self.loss(results, rgbs, ray_mask)
         loss = sum(l for l in loss_d.values())
 
         with torch.no_grad():
@@ -434,10 +276,13 @@ class NeRFSystem(LightningModule):
         ray_mask = batch['ray_mask']
         rgbs = batch['rgbs']
         ts = batch['ts'].squeeze()
-        labels = batch['labels'].to(torch.long).squeeze()
 
-        results = self.forward(rays, ts, version="val")
-        loss_d = self.loss(results, rgbs, labels, ray_mask)
+        if self.current_epoch >= self.hparams.epochs_begin_grouping:
+            do_grouping = True
+        else:
+            do_grouping = False
+        results = self.forward(rays, ts, do_grouping=do_grouping, test_time=True)
+        loss_d = self.loss(results, rgbs, ray_mask)
         loss = sum(l for l in loss_d.values())
 
         # Render metrics
@@ -460,7 +305,7 @@ class NeRFSystem(LightningModule):
         label_colors = np.random.rand(self.hparams.num_classes, 3)
         _, res_img = render_to_path(path=render_path, dataset=self.test_dataset,
                                     idx=batch_nb, models=self.models, embeddings=self.embeddings,
-                                    config=self.hparams, label_colors=label_colors)
+                                    config=self.hparams, label_colors=label_colors, do_grouping=do_grouping)
         wd_img = wandb.Image(res_img, caption=f"{render_img_name}")
         wandb.log({f"train_rendering/Renderings_id={batch_nb}": wd_img})
 
@@ -473,7 +318,7 @@ class NeRFSystem(LightningModule):
         render_path = os.path.join(render_dir, f"{render_img_name}.png")
         _, res_img = render_to_path(path=render_path, dataset=self.val_dataset,
                                     idx=batch_nb, models=self.models, embeddings=self.embeddings,
-                                    config=self.hparams, label_colors=label_colors)
+                                    config=self.hparams, label_colors=label_colors, do_grouping=do_grouping)
         wd_img = wandb.Image(res_img, caption=f"{render_img_name}")
         wandb.log({f"val_rendering/Renderings_id={batch_nb}": wd_img})
 
@@ -489,8 +334,6 @@ def main(hparams):
         group_name = '_'.join(group_name) + '_cont'
     else:
         exp_name = hparams.exp_name
-        if hparams.predict_label:
-            exp_name += '_label'
 
         group_name = exp_name
         time_string = datetime.datetime.now().strftime("%m-%d-%H-%M-%S")

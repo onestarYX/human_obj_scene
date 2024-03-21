@@ -505,7 +505,7 @@ class SitcomSAMDataset(RenderDataset):
                 max_far = np.fromiter(fars.values(), np.float32).max()
 
             print(f"max_far: {max_far}")
-            self.scale_factor = max_far / 5  # so that the max far is scaled to 5   #TODO: figure out what this scale_factor is doing
+            self.scale_factor = max_far / 5  # so that the max far is scaled to 5
             self.poses[..., 3] /= self.scale_factor
             self.xyz_world /= self.scale_factor
             self.bbox /= self.scale_factor
@@ -581,10 +581,10 @@ class SitcomSAMDataset(RenderDataset):
             self.all_valid_pixel_indices.append(valid_pixel_indices)
 
             # Get SAM masks
-            sam_masks = self.sam_dict[id_]
-            sam_masks = torch.tensor(np.stack(sam_masks, axis=0))
-            sam_masks = create_pixel_mask_array(sam_masks).long()
-            self.all_sam_masks.append(sam_masks)
+            # sam_masks = self.sam_dict[id_]
+            # sam_masks = torch.tensor(np.stack(sam_masks, axis=0))
+            # sam_masks = create_pixel_mask_array(sam_masks).long()
+            # self.all_sam_masks.append(sam_masks)
 
         self.all_rays = torch.stack(self.all_rays, 0)  # (N_images, h, w, 9)
         self.all_rgbs = torch.stack(self.all_rgbs, 0)  # (N_images, h, w, 3)
@@ -630,7 +630,7 @@ class SitcomSAMDataset(RenderDataset):
         elif self.split in ['val', 'test_train']:
             sample = {}
             sample['rays'] = self.all_rays[idx, :, :, :8].reshape(-1, 8)
-            sample['ts'] = self.all_rays[idx, :, :, 8].reshape(-1, 1)
+            sample['ts'] = self.all_rays[idx, :, :, 8].reshape(-1, 1).long()
             sample['rgbs'] = self.all_rgbs[idx].reshape(-1, 3)
             sample['labels'] = self.all_labels[idx].reshape(-1, 1)
             sample['ray_mask'] = self.all_valid_ray_masks[idx].reshape(-1, 1)

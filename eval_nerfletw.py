@@ -10,7 +10,7 @@ from tqdm import tqdm
 # models
 from models.nerf import (
     PosEmbedding,
-    NeRF
+    NeRFW
 )
 from models.nerflet import Nerflet, BgNeRF
 from models.rendering_nerflet import (
