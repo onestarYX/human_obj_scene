@@ -306,27 +306,26 @@ class NeRFSystem(LightningModule):
         results['img_wh'] = [W, H]
         return results
 
-    def forward(self, rays, ts, version=None):
+    def forward(self, rays, ts, test_time):
         """Do batched inference on rays using chunk."""
-        assert version is not None
         B = rays.shape[0]
         results = defaultdict(list)
         for i in range(0, B, self.hparams.chunk):
             rendered_ray_chunks = \
-                render_rays(self.models,
-                            self.embeddings,
-                            rays[i:i + self.hparams.chunk],
-                            ts[i:i + self.hparams.chunk],
-                            self.hparams.predict_label,
-                            self.hparams.num_classes,
-                            self.hparams.N_samples,
-                            self.hparams.use_disp,
-                            self.hparams.perturb if version == "train" else 0,
-                            self.hparams.noise_std,
-                            self.hparams.N_importance,
-                            self.hparams.chunk,  # chunk size is effective in val mode
-                            self.train_dataset.white_back,
-                            validation_version=version == "val")
+                render_rays(models=self.models,
+                            embeddings=self.embeddings,
+                            rays=rays[i:i + self.hparams.chunk],
+                            ts=ts[i:i + self.hparams.chunk],
+                            predict_label=self.hparams.predict_label,
+                            num_classes=self.hparams.num_classes,
+                            N_samples=self.hparams.N_samples,
+                            use_disp=self.hparams.use_disp,
+                            perturb=self.hparams.perturb if not test_time else 0,
+                            noise_std=self.hparams.noise_std,
+                            N_importance=self.hparams.N_importance,
+                            chunk=self.hparams.chunk,  # chunk size is effective in val mode
+                            white_back=self.train_dataset.white_back,
+                            test_time=test_time)
 
             for k, v in rendered_ray_chunks.items():
                 results[k] += [v]
@@ -402,7 +401,7 @@ class NeRFSystem(LightningModule):
         ts = batch['ts']
         labels = batch['labels'].to(torch.long).squeeze()
 
-        results = self.forward(rays, ts, version="train")
+        results = self.forward(rays, ts, test_time=False)
         loss_d = self.loss(results, rgbs, labels, ray_mask)
         loss = sum(l for l in loss_d.values())
 
@@ -436,7 +435,7 @@ class NeRFSystem(LightningModule):
         ts = batch['ts'].squeeze()
         labels = batch['labels'].to(torch.long).squeeze()
 
-        results = self.forward(rays, ts, version="val")
+        results = self.forward(rays, ts, test_time=True)
         loss_d = self.loss(results, rgbs, labels, ray_mask)
         loss = sum(l for l in loss_d.values())
 

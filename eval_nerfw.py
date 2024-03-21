@@ -46,19 +46,19 @@ def batched_inference(models, embeddings,
     results = defaultdict(list)
     for chunk_idx in range(0, B, chunk):
         rendered_ray_chunks = \
-            render_rays(models,
-                        embeddings,
-                        rays[chunk_idx:chunk_idx+chunk],
-                        ts[chunk_idx:chunk_idx+chunk] if ts is not None else None,
-                        predict_label,
-                        num_classes,
-                        N_samples,
-                        use_disp,
+            render_rays(models=models,
+                        embeddings=embeddings,
+                        rays=rays[chunk_idx:chunk_idx+chunk],
+                        ts=ts[chunk_idx:chunk_idx+chunk] if ts is not None else None,
+                        predict_label=predict_label,
+                        num_classes=num_classes,
+                        N_samples=N_samples,
+                        use_disp=use_disp,
                         perturb=0,
                         N_importance=N_importance,
                         chunk=chunk,
                         white_back=white_back,
-                        test_time=False,
+                        test_time=True,
                         **kwargs)
 
         for k, v in rendered_ray_chunks.items():
@@ -86,10 +86,7 @@ def render_to_path(path, dataset, idx, models, embeddings, config,
                    label_colors):
     sample = dataset[idx]
     rays = sample['rays']
-    if 'ts2' in sample:
-        ts = sample['ts2']
-    else:
-        ts = sample['ts']
+    ts = sample['ts'].squeeze()
     results = batched_inference(models=models, embeddings=embeddings, rays=rays.cuda(), ts=ts.cuda(),
                                 predict_label=config.predict_label, num_classes=config.num_classes,
                                 N_samples=config.N_samples, N_importance=config.N_importance,

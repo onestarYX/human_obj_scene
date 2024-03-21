@@ -180,9 +180,8 @@ class NeRFSystem(LightningModule):
                       'near_far_version': self.hparams.near_far_version,
                       'num_limit': self.hparams.num_limit,
                       'bs': self.hparams.batch_size}
-            # !!!!! There is no manual near and far restriction to the dataset. We didn't overwrite near here !!!!!
-            self.train_dataset = dataset(split='train' if not self.eval_only else 'val',
-                                         img_downscale=self.hparams.img_downscale, **kwargs)
+            # Far comes from estiamtion of scene point cloud. And we didn't overwrite near here !!!!!
+            self.train_dataset = dataset(split='train', img_downscale=self.hparams.img_downscale, **kwargs)
             self.val_dataset = dataset(split='val', img_downscale=self.hparams.img_downscale_val, **kwargs)
             self.test_dataset = dataset(split='test_train', img_downscale=self.hparams.img_downscale_val, **kwargs)
         elif self.hparams.dataset_name == 'kitti360':
@@ -238,6 +237,9 @@ class NeRFSystem(LightningModule):
         ray_mask = batch['ray_mask']
         rgbs = batch['rgbs']
         ts = batch['ts']
+
+        # if self.current_epoch == self.hparams.epochs_begin_grouping:
+        #     if
 
         if self.current_epoch >= self.hparams.epochs_begin_grouping:
             results = self.forward(rays, ts, do_grouping=True, test_time=False)

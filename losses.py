@@ -50,7 +50,7 @@ class NerfWLoss(nn.Module):
             else:
                 ret['f_l'] = \
                     (((inputs['rgb_fine'] - gt_rgbs) ** 2 / (2 * inputs['beta'].unsqueeze(1) ** 2)) * ray_mask).sum() / ray_mask_sum
-                ret['b_l'] = 3 + (torch.log(inputs['beta']) * ray_mask).sum() / ray_mask_sum
+                ret['b_l'] = 3 + (torch.log(inputs['beta']) * ray_mask.squeeze(1)).sum() / ray_mask_sum
                 ret['s_l'] = self.lambda_u * inputs['transient_sigmas'].mean()
 
         if self.predict_label:
@@ -225,7 +225,7 @@ class NerfWGarfieldLoss(nn.Module):
             else:
                 ret['f_l'] = \
                     (((inputs['rgb_fine_combined'] - gt_rgbs) ** 2 / (2 * inputs['beta'].unsqueeze(1) ** 2)) * ray_mask).sum() / ray_mask_sum
-                ret['b_l'] = 3 + (torch.log(inputs['beta']) * ray_mask).sum() / ray_mask_sum
+                ret['b_l'] = 3 + (torch.log(inputs['beta']) * ray_mask.squeeze(1)).sum() / ray_mask_sum
                 ret['s_l'] = self.lambda_u * inputs['transient_sigmas'].mean()
 
         for k, v in ret.items():
