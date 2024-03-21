@@ -56,9 +56,7 @@ class NeRFSystem(LightningModule):
             'c_l': hparams.w_color_l,
             'f_l': hparams.w_color_l,
             'b_l': hparams.w_beta_l,
-            's_l': hparams.w_transient_reg,
-            'cce_coarse': hparams.w_label_cce,
-            'cce_fine': hparams.w_label_cce
+            's_l': hparams.w_transient_reg
         }
         self.loss = loss_dict['nerfw_garfield'](coef=loss_weights)
 
