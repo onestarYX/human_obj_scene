@@ -210,23 +210,91 @@ class NerfWGarfieldLoss(nn.Module):
         self.coef = coef
         self.lambda_u = lambda_u
 
-    def forward(self, inputs, gt_rgbs, ray_mask):
+    def forward(self, results, batch, models, do_grouping=False):
+        gt_rgbs = batch['rgbs']
+        ray_mask = batch['ray_mask']
         ray_mask_sum = ray_mask.sum() + 1e-20
-        # if ray_mask_sum < len(inputs['rgb_fine']):
-        #     print(ray_mask_sum)
-
-        # print(inputs["transient_accumulation"].shape)
 
         ret = {}
-        ret['c_l'] = 0.5 * (((inputs['rgb_coarse'] - gt_rgbs) ** 2) * ray_mask).sum() / ray_mask_sum
-        if 'rgb_fine_combined' in inputs:
-            if 'beta' not in inputs:  # no transient head, normal MSE loss
-                ret['f_l'] = 0.5 * (((inputs['rgb_fine_combined'] - gt_rgbs) ** 2) * ray_mask).sum() / ray_mask_sum
+        ret['c_l'] = 0.5 * (((results['rgb_coarse'] - gt_rgbs) ** 2) * ray_mask).sum() / ray_mask_sum
+        if 'rgb_fine_combined' in results:
+            if 'beta' not in results:  # no transient head, normal MSE loss
+                ret['f_l'] = 0.5 * (((results['rgb_fine_combined'] - gt_rgbs) ** 2) * ray_mask).sum() / ray_mask_sum
             else:
                 ret['f_l'] = \
-                    (((inputs['rgb_fine_combined'] - gt_rgbs) ** 2 / (2 * inputs['beta'].unsqueeze(1) ** 2)) * ray_mask).sum() / ray_mask_sum
-                ret['b_l'] = 3 + (torch.log(inputs['beta']) * ray_mask.squeeze(1)).sum() / ray_mask_sum
-                ret['s_l'] = self.lambda_u * inputs['transient_sigmas'].mean()
+                    (((results['rgb_fine_combined'] - gt_rgbs) ** 2 / (2 * results['beta'].unsqueeze(1) ** 2)) * ray_mask).sum() / ray_mask_sum
+                ret['b_l'] = 3 + (torch.log(results['beta']) * ray_mask.squeeze(1)).sum() / ray_mask_sum
+                ret['s_l'] = self.lambda_u * results['transient_sigmas'].mean()
+
+        if do_grouping:
+            margin = 1.0
+            max_grouping_scale = 2
+            instance_loss = 0
+
+            garfield_predictor = models['garfield_predictor']
+            pt_encodings = results['pt_encodings']
+            weights = results['weights_fine_static']
+            scales = results['scales']
+            garfield = garfield_predictor.infer_garfield(pt_encodings, weights, scales) # (B, dim_feat)
+
+            sam_masks = results['sam_masks']     # do NOT count -1
+            input_id1 = input_id2 = sam_masks
+            # Expand labels
+            labels1_expanded = input_id1.unsqueeze(1).expand(-1, input_id1.shape[0])
+            labels2_expanded = input_id2.unsqueeze(0).expand(input_id2.shape[0], -1)
+
+            # Mask for positive/negative pairs across the entire matrix
+            mask_full_positive = labels1_expanded == labels2_expanded
+            mask_full_negative = ~mask_full_positive
+
+            # Create a block mask to only consider pairs within the same image -- no cross-image pairs
+            chunk_size = results['num_rays_per_img']  # i.e., the number of rays per image
+            num_chunks = input_id1.shape[0] // chunk_size  # i.e., # of images in the batch
+            block_mask = torch.kron(
+                torch.eye(num_chunks, device=sam_masks.device, dtype=bool),
+                torch.ones((chunk_size, chunk_size), device=sam_masks.device, dtype=bool),
+            )  # block-diagonal matrix, to consider only pairs within the same image
+
+            # Only consider upper triangle to avoid double-counting
+            block_mask = torch.triu(block_mask, diagonal=0)
+            # Only consider pairs where both points are valid (-1 means not in mask / invalid)
+            block_mask = block_mask * (labels1_expanded != -1) * (labels2_expanded != -1)
+
+            # Mask for diagonal elements (i.e., pairs of the same point).
+            # Don't consider these pairs for grouping supervision (pulling), since they are trivially similar.
+            diag_mask = torch.eye(block_mask.shape[0], device=sam_masks.device, dtype=bool)
+
+            # 1. If (A, s_A) and (A', s_A) in same group, then supervise the features to be similar
+            # Note that `use_single_scale` (for ablation only) causes grouping_field to ignore the scale input.
+            mask = torch.where(mask_full_positive * block_mask * (~diag_mask))
+            instance_loss_1 = torch.norm(
+                garfield[mask[0]] - garfield[mask[1]], p=2, dim=-1
+            ).nansum()
+            instance_loss += instance_loss_1
+
+            # 2. If ", then also supervise them to be similar at s > s_A
+            scale_diff = torch.max(
+                torch.zeros_like(scales), (max_grouping_scale - scales)
+            )
+            larger_scale = scales + scale_diff * torch.rand(
+                size=(1,), device=scales.device
+            )
+            garfield_lscale = garfield_predictor.infer_garfield(pt_encodings, weights, larger_scale) # (B, dim_feat)
+            mask = torch.where(mask_full_positive * block_mask * (~diag_mask))
+            instance_loss_2 = torch.norm(
+                garfield_lscale[mask[0]] - garfield_lscale[mask[1]], p=2, dim=-1
+            ).nansum()
+            instance_loss += instance_loss_2
+
+            # 4. Also supervising A, B to be dissimilar at scales s_A, s_B respectively seems to help.
+            mask = torch.where(mask_full_negative * block_mask)
+            instance_loss_4 = (
+                nn.functional.relu(
+                    margin - torch.norm(garfield[mask[0]] - garfield[mask[1]], p=2, dim=-1)
+                )
+            ).nansum()
+            instance_loss += instance_loss_4
+            ret['garfield_l'] = instance_loss / block_mask.sum()
 
         for k, v in ret.items():
             ret[k] = self.coef[k] * v

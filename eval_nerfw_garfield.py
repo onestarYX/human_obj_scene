@@ -35,6 +35,7 @@ import argparse
 from pathlib import Path
 import json
 from omegaconf import OmegaConf
+from sklearn.cluster import HDBSCAN
 
 
 @torch.no_grad()
@@ -45,12 +46,12 @@ def batched_inference(models, embeddings,
     B = rays.shape[0]
     results = defaultdict(list)
     for chunk_idx in range(0, B, chunk):
+        inputs = {'rays': rays[chunk_idx:chunk_idx+chunk],
+                  'ts': ts[chunk_idx:chunk_idx+chunk]}
         rendered_ray_chunks = \
             render_rays(models=models,
                         embeddings=embeddings,
-                        rays=rays[chunk_idx:chunk_idx+chunk],
-                        ts=ts[chunk_idx:chunk_idx+chunk] if ts is not None else None,
-                        do_grouping=do_grouping,
+                        inputs=inputs,
                         N_samples=N_samples,
                         use_disp=use_disp,
                         perturb=0,
@@ -61,10 +62,26 @@ def batched_inference(models, embeddings,
                         **kwargs)
 
         for k, v in rendered_ray_chunks.items():
-            results[k] += [v.cpu()]
+            results[k].append(v)
+
+        if do_grouping:
+            weights = rendered_ray_chunks['weights_fine_static']
+            pt_encodings = rendered_ray_chunks['pt_encodings']
+            garfield_predictor = models['garfield_predictor']
+
+            scales_0 = torch.ones(weights.shape[0], device=weights.device)
+            garfield_0 = garfield_predictor.infer_garfield(pt_encodings, weights, scales_0)  # (B, dim_feat)
+            results['garfield_0'].append(garfield_0)
+            scales_1 = 0.5 * torch.ones(weights.shape[0], device=weights.device)
+            garfield_1 = garfield_predictor.infer_garfield(pt_encodings, weights, scales_1)  # (B, dim_feat)
+            results['garfield_1'].append(garfield_1)
+            scales_2 = 0.1 * torch.ones(weights.shape[0], device=weights.device)
+            garfield_2 = garfield_predictor.infer_garfield(pt_encodings, weights, scales_2)  # (B, dim_feat)
+            results['garfield_2'].append(garfield_2)
 
     for k, v in results.items():
-        results[k] = torch.cat(v, 0)
+        results[k] = torch.cat(v, 0).cpu()
+
     return results
 
 
@@ -79,10 +96,14 @@ def compute_iou(pred, gt, num_cls):
             iou.append(numer / denom)
     return np.mean(iou)
 
+def cluster_2d_features(feats, clusterer, label_colors):
+    clusters = clusterer.fit_predict(feats)
+    cluster_map = label_colors[clusters]
+    cluster_map = (cluster_map * 255).astype(np.uint8)
+    return cluster_map
 
 
-def render_to_path(path, dataset, idx, models, embeddings, config,
-                   label_colors, do_grouping):
+def render_to_path(path, dataset, idx, models, embeddings, config, do_grouping):
     sample = dataset[idx]
     rays = sample['rays']
     ts = sample['ts'].squeeze()
@@ -125,6 +146,30 @@ def render_to_path(path, dataset, idx, models, embeddings, config,
     depth_static = depth_static.reshape(h, w, 1)
     depth_static_ = np.repeat(depth_static, 3, axis=2)
     rows.append(np.concatenate([img_static_, depth_static_], axis=1))
+
+    if do_grouping:
+        clusterer = HDBSCAN(
+            cluster_selection_epsilon=0.1,
+            min_samples=30,
+            min_cluster_size=30,
+            allow_single_cluster=True,
+        )
+        label_colors = np.random.rand(200, 3)
+        garfield_0 = results['garfield_0']
+        cluster_map_0 = cluster_2d_features(garfield_0, clusterer, label_colors)
+
+        cluster_map_0 = cluster_map_0.reshape(h, w, 3)
+        garfield_1 = results['garfield_1']
+        cluster_map_1 = cluster_2d_features(garfield_1, clusterer, label_colors)
+        cluster_map_1 = cluster_map_1.reshape(h, w, 3)
+
+        garfield_2 = results['garfield_2']
+        cluster_map_2 = cluster_2d_features(garfield_2, clusterer, label_colors)
+        cluster_map_2 = cluster_map_2.reshape(h, w, 3)
+
+        placeholder = np.zeros_like(cluster_map_2)
+        rows.append(np.concatenate([cluster_map_0, cluster_map_1], axis=1))
+        rows.append(np.concatenate([cluster_map_2, placeholder], axis=1))
 
     res_img = np.concatenate(rows, axis=0)
     # imageio.imwrite(path, res_img)

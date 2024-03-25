@@ -42,7 +42,10 @@ from eval_nerfletw import render_to_path
 import numpy as np
 
 def count_parameters(model):
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+    if isinstance(model, torch.nn.Module):
+        return sum(p.numel() for p in model.parameters() if p.requires_grad)
+    else:
+        return 0
 
 
 class NerfletWSystem(LightningModule):

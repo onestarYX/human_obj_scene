@@ -18,7 +18,7 @@ def get_parameters(models):
     elif isinstance(models, dict):
         for model in models.values():
             parameters += get_parameters(model)
-    else: # models is actually a single pytorch model
+    elif isinstance(models, torch.nn.Module): # models is actually a single pytorch model
         parameters += list(models.parameters())
     return parameters
 

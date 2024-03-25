@@ -18,7 +18,6 @@ import kornia
 import copy
 
 # from sitcoms3D.utils.io import load_from_json
-from transformers import pipeline
 
 
 def width_height_from_intr(K):
@@ -511,31 +510,7 @@ class SitcomSAMDataset(RenderDataset):
             self.bbox /= self.scale_factor
         self.poses_dict = {id_: self.poses[i] for i, id_ in enumerate(self.img_ids)}
 
-        # # Get SAM masks
-        # sam_out_dir = Path(self.environment_dir) / 'sam_masks'
-        # sam_out_dir.mkdir(exist_ok=True)
-        # sam_out_path = "train.pkl" if self.split in {'train', 'test_train'} else 'val.pkl'
-        # sam_out_path = sam_out_dir / sam_out_path
-        # self.sam_dict = {}
-        # if sam_out_path.exists():
-        #     with open(sam_out_path, 'rb') as handle:
-        #         self.sam_dict.update(pickle.load(handle))
-        # else:
-        #     print("Generating SAM masks......")
-        #     if self.sam_model is None:
-        #         self.sam_model = pipeline("mask-generation", model="facebook/sam-vit-huge", device=torch.device('cuda'))
-        #     for id_ in tqdm(self.img_ids):
-        #         img = self.get_img(id_)
-        #         img = Image.fromarray(img)
-        #         masks = self.sam_model(img, points_per_side=32, pred_iou_thresh=0.90, stability_score_thresh=0.90)
-        #         masks = masks['masks']
-        #         masks = sorted(masks, key=lambda x: x.sum())
-        #         self.sam_dict[id_] = masks
-        #     with open(sam_out_path, 'wb') as handle:
-        #         pickle.dump(self.sam_dict, handle)
 
-
-        self.all_img_ids = []
         self.all_rays = []
         self.all_rgbs = []
         self.all_valid_ray_masks = []  # rays that are inside the estimated bbox. (almost 1 for every ray)
@@ -544,7 +519,6 @@ class SitcomSAMDataset(RenderDataset):
         self.all_sam_masks = []
 
         for id_ in tqdm(self.img_ids):
-            self.all_img_ids.append(id_)
             c2w = torch.FloatTensor(self.get_pose(id_))
             # Get image
             img = self.get_img(id_)
@@ -561,7 +535,8 @@ class SitcomSAMDataset(RenderDataset):
             # Get rays
             directions = get_ray_directions(img_h, img_w, self.get_K(id_))
             rays_o, rays_d = get_rays(directions, c2w)  # (h*w, 3)
-            rays_t = self.id_to_idx[id_] * torch.ones(len(rays_o), 1)
+            # rays_t = self.id_to_idx[id_] * torch.ones(len(rays_o), 1)
+            rays_t = id_ * torch.ones(len(rays_o), 1)
             nears, fars, inbbox_ray_mask = self.get_nears_fars_from_rays_or_cam(rays_o, rays_d, c2w=c2w)
             rays = torch.cat([rays_o, rays_d,
                               nears,
@@ -590,6 +565,7 @@ class SitcomSAMDataset(RenderDataset):
         self.all_rgbs = torch.stack(self.all_rgbs, 0)  # (N_images, h, w, 3)
         self.all_valid_ray_masks = torch.stack(self.all_valid_ray_masks, 0)
         self.all_labels = torch.stack(self.all_labels, 0)
+        self.img_ids = torch.tensor(self.img_ids)
 
     def define_transforms(self):
         self.transform = T.ToTensor()
@@ -598,15 +574,16 @@ class SitcomSAMDataset(RenderDataset):
         if self.split == 'train':
             N, h, w = self.all_rays.shape[:-1]
             return N * h * w // self.bs
-        if self.split == 'test_train':
-            return len(self.img_ids)
-        if self.split == 'val':
+        else:
             return len(self.img_ids)
 
     def __getitem__(self, idx):
         if self.split == 'train':  # use data in the buffers
             num_images = self.bs // self.num_rays_per_img
             img_indices = torch.randint(low=0, high=len(self.img_ids), size=(num_images,))
+            selected_img_ids = self.img_ids[img_indices]
+            selected_img_ids = torch.repeat_interleave(selected_img_ids, self.num_rays_per_img)
+
             pixel_indices = []
             for img_idx in img_indices:
                 valid_pixel_indices = self.all_valid_pixel_indices[img_idx]
@@ -626,8 +603,11 @@ class SitcomSAMDataset(RenderDataset):
                       'ts': self.all_rays[ids, xs, ys, 8].long(),
                       'rgbs': self.all_rgbs[ids, xs, ys],
                       'labels': self.all_labels[ids, xs, ys],
-                      'ray_mask': self.all_valid_ray_masks[ids, xs, ys]}
-        elif self.split in ['val', 'test_train']:
+                      'ray_mask': self.all_valid_ray_masks[ids, xs, ys],
+                      'ids': selected_img_ids,
+                      'pixel_indices': pixel_indices
+                      }
+        elif self.split in ['val', 'test_train', 'all']:
             sample = {}
             sample['rays'] = self.all_rays[idx, :, :, :8].reshape(-1, 8)
             sample['ts'] = self.all_rays[idx, :, :, 8].reshape(-1, 1).long()
@@ -635,5 +615,6 @@ class SitcomSAMDataset(RenderDataset):
             sample['labels'] = self.all_labels[idx].reshape(-1, 1)
             sample['ray_mask'] = self.all_valid_ray_masks[idx].reshape(-1, 1)
             sample['img_wh'] = torch.LongTensor(self.img_wh)
+            sample['id'] = self.img_ids[idx]
 
         return sample
