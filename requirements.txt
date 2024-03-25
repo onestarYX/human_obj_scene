@@ -1,19 +1,19 @@
 # torch==1.13.1
 # torchvision==0.14.1
-pytorch-lightning==1.1.5
+pytorch-lightning==1.6.0
 einops==0.3.0
 test-tube==0.7.5
 kornia==0.4.1
-opencv-python==4.5.1.48
-matplotlib==3.3.3
+opencv-python
+matplotlib
 jupyter
-imageio==2.9.0
-imageio-ffmpeg==0.4.2
-pandas==1.1.5
+imageio
+imageio-ffmpeg
+pandas
 torch_optimizer
 
 # for phototourism visualization
-plotly==4.14.3
+# plotly
 
 # for mesh
 PyMCubes
@@ -28,3 +28,6 @@ open3d
 
 ConfigArgParse
 pyrender
+transformers
+omegaconf
+wandb

@@ -536,7 +536,7 @@ class SitcomSAMDataset(RenderDataset):
             directions = get_ray_directions(img_h, img_w, self.get_K(id_))
             rays_o, rays_d = get_rays(directions, c2w)  # (h*w, 3)
             # rays_t = self.id_to_idx[id_] * torch.ones(len(rays_o), 1)
-            rays_t = id_ * torch.ones(len(rays_o), 1)
+            rays_t = id_ * torch.ones(len(rays_o), 1)   # TODO: remove this! This is for hacking!
             nears, fars, inbbox_ray_mask = self.get_nears_fars_from_rays_or_cam(rays_o, rays_d, c2w=c2w)
             rays = torch.cat([rays_o, rays_d,
                               nears,

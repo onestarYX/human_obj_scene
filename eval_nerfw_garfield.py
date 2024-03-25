@@ -35,7 +35,8 @@ import argparse
 from pathlib import Path
 import json
 from omegaconf import OmegaConf
-from sklearn.cluster import HDBSCAN
+# from sklearn.cluster import HDBSCAN
+from cuml.cluster.hdbscan import HDBSCAN
 
 
 @torch.no_grad()
@@ -97,7 +98,7 @@ def compute_iou(pred, gt, num_cls):
     return np.mean(iou)
 
 def cluster_2d_features(feats, clusterer, label_colors):
-    clusters = clusterer.fit_predict(feats)
+    clusters = clusterer.fit_predict(feats.numpy())
     cluster_map = label_colors[clusters]
     cluster_map = (cluster_map * 255).astype(np.uint8)
     return cluster_map
