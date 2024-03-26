@@ -243,6 +243,6 @@ class GarfieldPredictor(nn.Module):
         hash_rendered = (pos_hash * topk_weights.unsqueeze(-1)).sum(dim=-2)
         # After rendering, normalize features.
         hash_rendered = hash_rendered / torch.linalg.norm(hash_rendered, dim=-1, keepdim=True)
-        garfield = self.get_mlp(hash_rendered, scales)
+        garfield = self.get_mlp(hash_rendered, scales).to(torch.float32)
 
         return garfield
