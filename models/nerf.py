@@ -1,6 +1,5 @@
 import torch
 from torch import nn
-from sklearn.preprocessing import QuantileTransformer
 
 class PosEmbedding(nn.Module):
     def __init__(self, max_logscale, N_freqs, logscale=True):
@@ -329,51 +328,3 @@ class NeRFWG(nn.Module):
         return torch.cat([static, transient], 1), xyz_  # (B, 9)
 
 
-class GarfieldPredictor(nn.Module):
-    def __init__(self, D=2, W=256):
-        super().__init__()
-        self.D = D
-        self.W = W
-        layers = [nn.Linear(W + 1, W)]
-        for i in range(1, D):
-            layers.append(nn.Linear(W, W))
-        self.garfield_mlp = nn.Sequential(*layers)
-        self.quantile_transformer = None
-
-    def get_quantile_func(self, scales: torch.Tensor, distribution="normal"):
-        """
-        Use 3D scale statistics to normalize scales -- use quantile transformer.
-        """
-        scales = scales.flatten()
-        # scales = scales[(scales > 0) & (scales < self.config.max_grouping_scale)]
-
-        scales = scales.detach().cpu().numpy()
-
-        # Calculate quantile transformer
-        quantile_transformer = QuantileTransformer(output_distribution=distribution)
-        quantile_transformer = quantile_transformer.fit(scales.reshape(-1, 1))
-
-        def quantile_transformer_func(scales):
-            # This function acts as a wrapper for QuantileTransformer.
-            # QuantileTransformer expects a numpy array, while we have a torch tensor.
-            return torch.Tensor(
-                quantile_transformer.transform(scales.cpu().numpy())
-            ).to(scales.device)
-
-        self.quantile_transformer = quantile_transformer_func
-
-    def forward(self, x):
-        out = self.garfield_mlp(x)
-        return torch.nn.functional.normalize(out, dim=-1)
-
-    def infer_garfield(self, pt_encodings, weights, scales):
-        scales = scales.unsqueeze(-1)
-        # Quantile transform scales (want it or not?)
-        assert self.quantile_transformer is not None
-        scales = self.quantile_transformer(scales)
-        scales = scales.view(-1, 1, 1).expand(-1, pt_encodings.shape[1], -1)
-        garfield_input = torch.cat([pt_encodings, scales], dim=-1)
-        garfield_out = self.forward(garfield_input)
-        garfield_out = weights.unsqueeze(-1) * garfield_out
-        garfield_out = garfield_out.sum(dim=1)
-        return garfield_out

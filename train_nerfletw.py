@@ -7,7 +7,7 @@ import datetime
 # pytorch-lightning
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning import LightningModule, Trainer
-from pytorch_lightning.loggers import TestTubeLogger
+from pytorch_lightning.loggers import TensorBoardLogger
 
 from datasets.sitcom3D import Sitcom3DDataset
 from datasets.blender import BlenderDataset
@@ -408,11 +408,8 @@ def main(hparams):
         exp_name += '_' + time_string
 
     # following pytorch lightning convention here
-    logger = TestTubeLogger(save_dir=save_dir,
-                            name=exp_name,
-                            debug=False,
-                            create_git_tag=False,
-                            log_graph=False)
+    logger = TensorBoardLogger(save_dir=save_dir,
+                            name=exp_name)
     version = logger.experiment.version
     if not isinstance(version, int):
         version = 0

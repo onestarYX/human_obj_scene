@@ -1,3 +1,4 @@
+# Use python>=3.10 1. install pytorch; 2. install requirements; 3. install cuml (from official website); 4. tinycudann
 # torch==1.13.1
 # torchvision==0.14.1
 pytorch-lightning==1.6.0

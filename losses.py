@@ -230,12 +230,15 @@ class NerfWGarfieldLoss(nn.Module):
             margin = 1.0
             max_grouping_scale = 2
             instance_loss = 0
+            ray_mask_expanded = torch.zeros((len(ray_mask), len(ray_mask)), device=ray_mask.device, dtype=torch.bool)
+            ray_mask_expanded[ray_mask.squeeze()] = 1
+            ray_mask_expanded[:, ray_mask.squeeze()] = 1
 
             garfield_predictor = models['garfield_predictor']
-            pt_encodings = results['pt_encodings']
             weights = results['weights_fine_static']
             scales = results['scales']
-            garfield = garfield_predictor.infer_garfield(pt_encodings, weights, scales) # (B, dim_feat)
+            points = results['xyz_fine']
+            garfield = garfield_predictor.infer_garfield(points, weights, scales)
 
             sam_masks = results['sam_masks']     # do NOT count -1
             input_id1 = input_id2 = sam_masks
@@ -286,7 +289,7 @@ class NerfWGarfieldLoss(nn.Module):
             larger_scale = scales + scale_diff * torch.rand(
                 size=(1,), device=scales.device
             )
-            garfield_lscale = garfield_predictor.infer_garfield(pt_encodings, weights, larger_scale) # (B, dim_feat)
+            garfield_lscale = garfield_predictor.infer_garfield(points, weights, larger_scale) # (B, dim_feat)
             mask = torch.where(mask_full_positive * block_mask * (~diag_mask) * static_mask)
             instance_loss_2 = torch.norm(
                 garfield_lscale[mask[0]] - garfield_lscale[mask[1]], p=2, dim=-1

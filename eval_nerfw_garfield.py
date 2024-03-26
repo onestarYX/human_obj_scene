@@ -67,17 +67,17 @@ def batched_inference(models, embeddings,
 
         if do_grouping:
             weights = rendered_ray_chunks['weights_fine_static']
-            pt_encodings = rendered_ray_chunks['pt_encodings']
+            points = rendered_ray_chunks['xyz_fine']
             garfield_predictor = models['garfield_predictor']
 
             scales_0 = torch.ones(weights.shape[0], device=weights.device)
-            garfield_0 = garfield_predictor.infer_garfield(pt_encodings, weights, scales_0)  # (B, dim_feat)
+            garfield_0 = garfield_predictor.infer_garfield(points, weights, scales_0)  # (B, dim_feat)
             results['garfield_0'].append(garfield_0)
             scales_1 = 0.5 * torch.ones(weights.shape[0], device=weights.device)
-            garfield_1 = garfield_predictor.infer_garfield(pt_encodings, weights, scales_1)  # (B, dim_feat)
+            garfield_1 = garfield_predictor.infer_garfield(points, weights, scales_1)  # (B, dim_feat)
             results['garfield_1'].append(garfield_1)
             scales_2 = 0.1 * torch.ones(weights.shape[0], device=weights.device)
-            garfield_2 = garfield_predictor.infer_garfield(pt_encodings, weights, scales_2)  # (B, dim_feat)
+            garfield_2 = garfield_predictor.infer_garfield(points, weights, scales_2)  # (B, dim_feat)
             results['garfield_2'].append(garfield_2)
 
     for k, v in results.items():

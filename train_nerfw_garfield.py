@@ -10,7 +10,7 @@ from typing import Optional
 # pytorch-lightning
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning import LightningModule, Trainer
-from pytorch_lightning.loggers import TestTubeLogger
+from pytorch_lightning.loggers import TensorBoardLogger
 import json
 from pathlib import Path
 import pickle
@@ -24,9 +24,9 @@ from PIL import Image
 # models
 from models.nerf import (
     PosEmbedding,
-    NeRFWG,
-    GarfieldPredictor
+    NeRFWG
 )
+from models.garfield import GarfieldPredictor
 from models.rendering_garfield import render_rays
 
 # optimizer, scheduler, visualization
@@ -108,7 +108,7 @@ class NeRFSystem(LightningModule):
         if self.hparams.overwrite_nerfw_ckpt is not None:
             self.load_from_ckpt_path(self.hparams.overwrite_nerfw_ckpt)
 
-        self.garfield_predictor = GarfieldPredictor(D=2, W=hparams.dim_hidden_layers)
+        self.garfield_predictor = GarfieldPredictor()
         self.models['garfield_predictor'] = self.garfield_predictor
 
         self.models_to_train += [self.models]
@@ -564,12 +564,9 @@ def main(hparams):
 
     # following pytorch lightning convention here
 
-    logger = TestTubeLogger(save_dir=save_dir,
-                            name=exp_name,
-                            debug=False,
-                            create_git_tag=False,
-                            log_graph=False)
-    version = logger.experiment.version
+    logger = TensorBoardLogger(save_dir=save_dir,
+                                name=exp_name)
+    version = 0
     if not isinstance(version, int):
         version = 0
 
@@ -607,12 +604,10 @@ def main(hparams):
 
     trainer = Trainer(max_epochs=hparams.num_epochs,
                       callbacks=[checkpoint_callback],
-                      resume_from_checkpoint=hparams.ckpt_path,
                       logger=logger,
-                      weights_summary=None,
-                      progress_bar_refresh_rate=hparams.bar_update_freq,
-                      gpus=hparams.num_gpus,
-                      accelerator='ddp' if hparams.num_gpus > 1 else None,
+                      log_every_n_steps=hparams.bar_update_freq,
+                      num_nodes=hparams.num_gpus,
+                      accelerator='cuda',
                       num_sanity_val_steps=0,
                       val_check_interval=hparams.val_freq if hparams.val_freq < 1 else int(hparams.val_freq),
                       limit_val_batches=5,

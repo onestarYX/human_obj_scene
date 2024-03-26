@@ -139,7 +139,6 @@ def render_rays(models,
         # Perform model inference to get rgb and raw sigma
         B = xyz_.shape[0]
         out_chunks = []
-        pt_encodings = []
 
         # infer rgb and sigma and others
         dir_embedded_ = repeat(dir_embedded, 'n1 c -> (n1 n2) c', n2=N_samples_)
@@ -159,13 +158,9 @@ def render_rays(models,
 
             nerfw_out, pt_enc = nerf_model(torch.cat(nerf_inputs, 1), output_transient=output_transient)
             out_chunks.append(nerfw_out)
-            pt_encodings.append(pt_enc)
 
         out = torch.cat(out_chunks, 0)
         out = rearrange(out, '(n1 n2) c -> n1 n2 c', n1=N_rays, n2=N_samples_)
-        pt_encodings = torch.cat(pt_encodings, 0)
-        pt_encodings = rearrange(pt_encodings, '(n1 n2) c -> n1 n2 c', n1=N_rays, n2=N_samples_)
-        results['pt_encodings'] = pt_encodings
 
         static_rgbs = out[..., :3]  # (N_rays, N_samples_, 3)
         static_sigmas = out[..., 3]  # (N_rays, N_samples_)
@@ -312,6 +307,7 @@ def render_rays(models,
         z_vals = torch.sort(torch.cat([z_vals, z_vals_], -1), -1)[0]
 
     xyz_fine = rays_o + rays_d * rearrange(z_vals, 'n1 n2 -> n1 n2 1')
+    results['xyz_fine'] = xyz_fine
     inputs_ = {'points': xyz_fine, 'z_vals': z_vals}
 
     if models['fine'].encode_appearance:
