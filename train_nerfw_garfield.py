@@ -526,9 +526,10 @@ class NeRFSystem(LightningModule):
         os.makedirs(render_dir, exist_ok=True)
         render_path = os.path.join(render_dir, f"{render_img_name}.png")
         np.random.seed(19)
+        label_colors = np.random.rand(200, 3)
         _, res_img = render_to_path(path=render_path, dataset=self.test_dataset,
                                     idx=batch_nb, models=self.models, embeddings=self.embeddings,
-                                    config=self.hparams, do_grouping=do_grouping)
+                                    config=self.hparams, label_colors=label_colors, do_grouping=do_grouping)
         wd_img = wandb.Image(res_img, caption=f"{render_img_name}")
         wandb.log({f"train_rendering/Renderings_id={batch_nb}": wd_img})
 
@@ -541,7 +542,7 @@ class NeRFSystem(LightningModule):
         render_path = os.path.join(render_dir, f"{render_img_name}.png")
         _, res_img = render_to_path(path=render_path, dataset=self.val_dataset,
                                     idx=batch_nb, models=self.models, embeddings=self.embeddings,
-                                    config=self.hparams, do_grouping=do_grouping)
+                                    config=self.hparams, label_colors=label_colors, do_grouping=do_grouping)
         wd_img = wandb.Image(res_img, caption=f"{render_img_name}")
         wandb.log({f"val_rendering/Renderings_id={batch_nb}": wd_img})
 

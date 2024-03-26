@@ -12,9 +12,9 @@ from models.nerf import (
     PosEmbedding,
     NeRFWG
 )
-from models.garfield import GarfieldPredictor
+from models.garfield import GarfieldPredictorOld
 from models.nerflet import Nerflet
-from models.rendering_garfield import (
+from models.rendering_garfield_old import (
     render_rays
 )
 
@@ -69,17 +69,17 @@ def batched_inference(models, embeddings,
 
         if do_grouping:
             weights = rendered_ray_chunks['weights_fine_static']
-            points = rendered_ray_chunks['xyz_fine']
+            pt_encodings = rendered_ray_chunks['pt_encodings']
             garfield_predictor = models['garfield_predictor']
 
             scales_0 = torch.ones(weights.shape[0], device=weights.device)
-            garfield_0 = garfield_predictor.infer_garfield(points, weights, scales_0)  # (B, dim_feat)
+            garfield_0 = garfield_predictor.infer_garfield(pt_encodings, weights, scales_0)  # (B, dim_feat)
             results['garfield_0'].append(garfield_0)
             scales_1 = 0.5 * torch.ones(weights.shape[0], device=weights.device)
-            garfield_1 = garfield_predictor.infer_garfield(points, weights, scales_1)  # (B, dim_feat)
+            garfield_1 = garfield_predictor.infer_garfield(pt_encodings, weights, scales_1)  # (B, dim_feat)
             results['garfield_1'].append(garfield_1)
             scales_2 = 0.1 * torch.ones(weights.shape[0], device=weights.device)
-            garfield_2 = garfield_predictor.infer_garfield(points, weights, scales_2)  # (B, dim_feat)
+            garfield_2 = garfield_predictor.infer_garfield(pt_encodings, weights, scales_2)  # (B, dim_feat)
             results['garfield_2'].append(garfield_2)
 
     for k, v in results.items():
@@ -259,7 +259,7 @@ if __name__ == '__main__':
                      in_channels_t=config.N_tau,
                      beta_min=config.beta_min,
                      use_view_dirs=config.use_view_dirs).cuda()
-    garfield_predictor = GarfieldPredictorOld()
+    garfield_predictor = GarfieldPredictorOld().cuda()
     load_ckpt(nerf_coarse, args.use_ckpt, model_name='nerf_coarse')
     load_ckpt(nerf_fine, args.use_ckpt, model_name='nerf_fine')
     load_ckpt(garfield_predictor, args.use_ckpt, model_name='garfield_predictor')
@@ -280,8 +280,9 @@ if __name__ == '__main__':
             continue
 
         path = output_dir / f"{i:03d}.png"
-        metrics, _ = render_to_path(path=path, dataset=dataset, idx=i, models=models, embeddings=embeddings,
-                                    config=config, do_grouping=True, label_colors=label_colors, save_img=True)
+        with torch.no_grad():
+            metrics, _ = render_to_path(path=path, dataset=dataset, idx=i, models=models, embeddings=embeddings,
+                                        config=config, do_grouping=True, label_colors=label_colors, save_img=True)
         psnrs.append(metrics['psnr'])
 
     mean_psnr = np.mean(psnrs)
