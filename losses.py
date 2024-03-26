@@ -264,9 +264,16 @@ class NerfWGarfieldLoss(nn.Module):
             # Don't consider these pairs for grouping supervision (pulling), since they are trivially similar.
             diag_mask = torch.eye(block_mask.shape[0], device=sam_masks.device, dtype=bool)
 
+            # Ignore transient pixels.
+            static_pixel_indices = results['beta'] < 0.15
+            static_mask = torch.zeros_like(diag_mask)
+            static_mask[static_pixel_indices] = 1
+            static_mask[:, static_pixel_indices] = 1
+            static_mask = static_mask.to(torch.bool)
+
             # 1. If (A, s_A) and (A', s_A) in same group, then supervise the features to be similar
             # Note that `use_single_scale` (for ablation only) causes grouping_field to ignore the scale input.
-            mask = torch.where(mask_full_positive * block_mask * (~diag_mask))
+            mask = torch.where(mask_full_positive * block_mask * (~diag_mask) * static_mask)
             instance_loss_1 = torch.norm(
                 garfield[mask[0]] - garfield[mask[1]], p=2, dim=-1
             ).nansum()
@@ -280,14 +287,14 @@ class NerfWGarfieldLoss(nn.Module):
                 size=(1,), device=scales.device
             )
             garfield_lscale = garfield_predictor.infer_garfield(pt_encodings, weights, larger_scale) # (B, dim_feat)
-            mask = torch.where(mask_full_positive * block_mask * (~diag_mask))
+            mask = torch.where(mask_full_positive * block_mask * (~diag_mask) * static_mask)
             instance_loss_2 = torch.norm(
                 garfield_lscale[mask[0]] - garfield_lscale[mask[1]], p=2, dim=-1
             ).nansum()
             instance_loss += instance_loss_2
 
             # 4. Also supervising A, B to be dissimilar at scales s_A, s_B respectively seems to help.
-            mask = torch.where(mask_full_negative * block_mask)
+            mask = torch.where(mask_full_negative * block_mask * static_mask)
             instance_loss_4 = (
                 nn.functional.relu(
                     margin - torch.norm(garfield[mask[0]] - garfield[mask[1]], p=2, dim=-1)
